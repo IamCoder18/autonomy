@@ -179,13 +179,20 @@ fork with a different maintainer identity. If you would rather Autonomy join the
 because Central releases are immutable and 0.1.0's signer cannot be revised
 afterwards.
 
-**Decision, settled at 0.1.1:** Autonomy has its own key. The counter-argument
+**Decision, settled at 0.1.2:** Autonomy has its own key. The counter-argument
 was that Engram -- also `com.aaravlabs`, also a separate repository -- shares
 Synapse's key, so a single key per group would have been tidier. Autonomy
 gets its own anyway, on the grounds that a fork of this library should not be
 able to sign its releases with a key it does not hold, and because a key per
 project is easier to rotate or retire independently. The cost is that
 `com.aaravlabs` now has two signers, which Central does not mind.
+
+**Let the tag push trigger the publish. Do not also dispatch the workflow by
+hand.** The two run concurrently, both upload a bundle for the same coordinate,
+and Central rejects the second with `is currently being published in another
+deployment`. Worse, the loser can leave the coordinate locked in `PUBLISHING`,
+which Central will not clear -- it only drops deployments in `VALIDATED` or
+`FAILED`. That is what cost 0.1.1; see the CHANGELOG.
 
 Central mirrors to `repo1.maven.org` on a delay, usually minutes but
 occasionally an hour. Search on

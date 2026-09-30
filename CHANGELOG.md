@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-09-30
+## [0.1.2] - 2026-09-30
 
 No source changes from 0.1.0 -- same classes, same tests, same behaviour. This
 version exists because of how the library is *distributed*.
@@ -23,10 +23,16 @@ version exists because of how the library is *distributed*.
   every artifact and on the Gradle module metadata. Signing is conditional on
   both `SIGNING_KEY` and `SIGNING_PASSWORD` being set, so nothing else in the
   build changes when they are absent.
-- **0.1.0 is not superseded in place.** It stays on GitHub Packages, unsigned.
-  Reusing that version number for a signed build would give one version two
-  different sets of bytes depending on where a consumer found it, so this is a
-  new coordinate rather than a republish.
+- **Neither 0.1.0 nor 0.1.1 is superseded in place.** Both stay on GitHub
+  Packages, unsigned. Reusing a version number for a signed build would give one
+  version two different sets of bytes depending on where a consumer found it, so
+  each attempt is a new coordinate rather than a republish.
+- **0.1.1 is abandoned, not released.** Its first Central deployment was
+  rejected because the signing key was not yet on a PGP keyserver. The retry
+  raced a second deployment for the same coordinate -- a tag push and a manual
+  dispatch at the same time -- and Central wedged one of them in `PUBLISHING`,
+  holding a lock that only Central can clear. It is not on Maven Central and
+  never will be. 0.1.2 is the release.
 
 ### Notes
 

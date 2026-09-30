@@ -16,7 +16,7 @@ plugins {
 }
 
 group = 'com.aaravlabs'
-version = '0.1.1'
+version = '0.1.2'
 
 description = 'A state-machine framework for FTC autonomous routines.'
 
