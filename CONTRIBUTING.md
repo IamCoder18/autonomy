@@ -190,9 +190,26 @@ project is easier to rotate or retire independently. The cost is that
 **Let the tag push trigger the publish. Do not also dispatch the workflow by
 hand.** The two run concurrently, both upload a bundle for the same coordinate,
 and Central rejects the second with `is currently being published in another
-deployment`. Worse, the loser can leave the coordinate locked in `PUBLISHING`,
-which Central will not clear -- it only drops deployments in `VALIDATED` or
-`FAILED`. That is what cost 0.1.1; see the CHANGELOG.
+deployment`. That costs a CI run and a confusing failure, not a release.
+
+**Do not read `PUBLISHING` as stuck.** After a successful deploy, the
+deployment sits in `PUBLISHING` while Central syncs to `repo1.maven.org`, and
+`updateTimestamp` does not move while it waits. On a first release that took
+about 16 minutes, which looked exactly like a hang -- Central would not drop
+the deployment either, but only because it was in `PUBLISHING` rather than
+`VALIDATED` or `FAILED`, which is the state it can be dropped from.
+
+The reliable signal is `repo1.maven.org`, not the deployment state:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://repo1.maven.org/maven2/com/aaravlabs/autonomy/X.Y.Z/autonomy-X.Y.Z.pom
+```
+
+Wait for that to return 200 before concluding anything has gone wrong. A
+version number cannot be reused once Central has it, so deciding a release is
+dead before `repo1` says so costs a version -- which is how 0.1.2 came to
+exist. See the CHANGELOG.
 
 Central mirrors to `repo1.maven.org` on a delay, usually minutes but
 occasionally an hour. Search on

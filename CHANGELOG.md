@@ -23,16 +23,35 @@ version exists because of how the library is *distributed*.
   every artifact and on the Gradle module metadata. Signing is conditional on
   both `SIGNING_KEY` and `SIGNING_PASSWORD` being set, so nothing else in the
   build changes when they are absent.
-- **Neither 0.1.0 nor 0.1.1 is superseded in place.** Both stay on GitHub
-  Packages, unsigned. Reusing a version number for a signed build would give one
-  version two different sets of bytes depending on where a consumer found it, so
-  each attempt is a new coordinate rather than a republish.
-- **0.1.1 is abandoned, not released.** Its first Central deployment was
-  rejected because the signing key was not yet on a PGP keyserver. The retry
-  raced a second deployment for the same coordinate -- a tag push and a manual
-  dispatch at the same time -- and Central wedged one of them in `PUBLISHING`,
-  holding a lock that only Central can clear. It is not on Maven Central and
-  never will be. 0.1.2 is the release.
+- **0.1.0 is not superseded in place.** It stays on GitHub Packages, unsigned.
+  Reusing that version number for a signed build would give one version two
+  different sets of bytes depending on where a consumer found it, so this is a
+  new coordinate rather than a republish.
+- **0.1.1, 0.1.2, and 0.1.0 all carry identical source.** They differ only in
+  how they are distributed. Take the highest.
+
+### Release history, including a mistake
+
+0.1.0 went to GitHub Packages unsigned. 0.1.1 was the first attempt at a
+signed Central release, and its first deployment was correctly rejected:
+Central could not resolve the signing key, which was at that point only in a
+local keyring. The key was published to `keyserver.ubuntu.com` and the release
+retried.
+
+The retry also failed, with `is currently being published in another
+deployment` -- a tag push had triggered a publish at the same moment as a
+manual dispatch, and two bundles for one coordinate collided. **At that point
+0.1.1 was wrongly declared dead**, on the reading that the surviving
+deployment was stuck: its `updateTimestamp` had not moved for several minutes
+and Central refused to drop it (`can only drop deployments that are in a
+VALIDATED or FAILED state`).
+
+That reading was wrong. `PUBLISHING` on Central Portal is simply slow -- it sat
+in that state for around 16 minutes and then completed. 0.1.1 is on Maven
+Central, signed and intact, and 0.1.2 was cut for a problem that did not
+exist. The version number was burned on a false premise.
+
+What the collision did cost is one wasted CI run, not a release.
 
 ### Notes
 
