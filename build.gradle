@@ -1,0 +1,181 @@
+// Autonomy — a state-machine framework for FTC autonomous routines.
+//
+// Single-module project: the root project *is* the library, and the published
+// artifact is `com.aaravlabs:autonomy`. Structure:
+//
+//   src/main/java/com/aaravlabs/autonomy/       the state framework (plain Java)
+//   src/main/java/com/aaravlabs/autonomy/ftc/   the one robot-facing class
+//   src/main/resources/META-INF/proguard/       R8 keep rules
+//   ftc-stub/src/main/java/                     compile-time FTC SDK stubs
+//   src/test/java/com/aaravlabs/autonomy/       JUnit 5 tests
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+}
+
+group = 'com.aaravlabs'
+version = '0.1.0'
+
+description = 'A state-machine framework for FTC autonomous routines.'
+
+java {
+    // Matches Synapse and Engram. The FTC adapter extends Synapse's SafeOpMode,
+    // so the two libraries must agree on a bytecode level or consumers on an
+    // older JDK cannot read the resulting class files.
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+
+    // Autonomy is published here. The same repository is declared for
+    // resolution so that Synapse can be resolved from either Central or its
+    // GitHub Packages mirror, matching how consumers are expected to set up.
+    maven {
+        name = 'GitHubPackages'
+        url = 'https://maven.pkg.github.com/IamCoder18/autonomy'
+        credentials {
+            username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_USER') ?: System.getenv('GITHUB_ACTOR')
+            password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+        }
+    }
+}
+
+// ---- FTC SDK compile-time stub ---------------------------------------------
+//
+// `StateMachineOpMode` extends Synapse's `SafeOpMode`, which extends the FTC
+// SDK's `OpMode`. The real `org.firstinspires.ftc:*` artifacts are published
+// only as Android AARs, which a plain `java-library` project cannot place on a
+// javac classpath -- and adopting the Android Gradle Plugin to compile one
+// adapter class would drag androidx and a compileSdk into the build.
+//
+// So the handful of SDK types Autonomy actually names are hand-written under
+// ftc-stub/ and compiled into a jar used only at compile time. The Robot
+// Controller supplies the genuine classes at runtime, so the stub is
+// `compileOnly` and never reaches the published artifact.
+//
+// The jar lands in build/ rather than being committed as an opaque binary: the
+// stub sources are the source of truth, and a committed jar both duplicates them
+// and leaves the working tree dirty every time a build regenerates it.
+def stubClasses = layout.buildDirectory.dir('ftc-stub/classes')
+
+def compileFtcStub = tasks.register('compileFtcStub', JavaCompile) {
+    description = 'Compiles the hand-written FTC SDK compile-time stub.'
+    group = 'build'
+    source = fileTree('ftc-stub/src/main/java') { include '**/*.java' }
+    classpath = files()
+    destinationDirectory.set(stubClasses)
+    options.encoding = 'UTF-8'
+    options.release = 11
+}
+
+def ftcStubJar = tasks.register('ftcStubJar', Jar) {
+    description = 'Packages the FTC SDK compile-time stub for the compile classpath.'
+    group = 'build'
+    dependsOn compileFtcStub
+    from stubClasses
+    archiveFileName = 'ftc-sdk-stub.jar'
+    destinationDirectory.set(layout.buildDirectory.dir('ftc-stub'))
+    // Byte-identical output for identical input, so rebuilding does not churn
+    // the file for no reason.
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+dependencies {
+    // `api`, not `compileOnly`. A consumer that writes
+    // `class MyAuto extends StateMachineOpMode` and then calls `safeMap.device(...)`
+    // needs SafeOpMode on its own compile classpath. Declaring this `compileOnly`
+    // would let such a consumer compile and then fail to link with
+    // NoClassDefFoundError. Consumers can still force a different Synapse;
+    // Gradle resolves the highest version.
+    api 'com.aaravlabs:synapse:0.4.0'
+
+    compileOnly files(ftcStubJar)
+    testCompileOnly files(ftcStubJar)
+    testRuntimeOnly files(ftcStubJar)
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // `release` pins the API surface to Java 11 even when building with a newer
+    // JDK, so an accidental use of a newer API fails at compile time.
+    options.release = 11
+    options.compilerArgs << '-Xlint:all' << '-Xlint:-processing' << '-Xlint:-serial'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.addStringOption('Xdoclint:none', '-quiet')
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'full'
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            pom {
+                name = 'Autonomy'
+                description = 'A state-machine framework for FTC autonomous routines.'
+                url = 'https://github.com/IamCoder18/autonomy'
+                licenses {
+                    license {
+                        name = 'MIT'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/IamCoder18/autonomy'
+                    connection = 'scm:git:git://github.com/IamCoder18/autonomy.git'
+                    developerConnection = 'scm:git:ssh://git@github.com:IamCoder18/autonomy.git'
+                }
+                developers {
+                    developer {
+                        id = 'IamCoder18'
+                        name = 'IamCoder18'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        mavenLocal()
+        maven {
+            name = 'GitHubPackages'
+            url = 'https://maven.pkg.github.com/IamCoder18/autonomy'
+            credentials {
+                username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_USER') ?: System.getenv('GITHUB_ACTOR')
+                password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}
+
+// Signing is optional. Without a key the publications are simply unsigned,
+// which is fine for GitHub Packages. If Autonomy is ever promoted to Maven
+// Central, Central requires a signature on every artifact and this block is
+// already wired for it.
+signing {
+    def signingKey = findProperty('signing.key') ?: System.getenv('SIGNING_KEY')
+    def signingPassphrase = findProperty('signing.password') ?: System.getenv('SIGNING_PASSWORD')
+    if (signingKey && signingPassphrase) {
+        useInMemoryPgpKeys(signingKey, signingPassphrase)
+        sign publishing.publications.maven
+    }
+}

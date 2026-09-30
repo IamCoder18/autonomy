@@ -1,0 +1,66 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-09-30
+
+First release. The state machine was extracted from the Team 23684 robot code
+so it could be versioned, tested, and reused independently of the FTC SDK fork
+it was written in.
+
+### Added
+
+- **`State`** — the four-method step contract: `init()`, `loop()`, `stop()`,
+  and a `BooleanSupplier` end condition. `name()` defaults to the simple class
+  name for telemetry.
+- **`AbstractState`** — base class that stores the end condition, with
+  `setEndCondition(...)` called from `init()`. A state that never sets one loops
+  exactly once and then finishes, so a forgotten condition moves the routine on
+  instead of stalling it.
+- **`StateMachine`** — runs a fixed `List<State>` in order, one OpMode iteration
+  per `update()`. The end condition is read *after* `loop()`, so every state
+  loops at least once. `stop()` ends the route early and runs the active
+  state's `stop()`. Reports `currentState()`, `currentIndex()`,
+  `elapsedSeconds()`, and `currentStateElapsedSeconds()` for tuning. Injects a
+  `LongSupplier` clock so tests are deterministic.
+- **`WaitState`** — waits a fixed number of seconds. Defaults to the label
+  "Wait"; a named constructor is available for a settle delay.
+- **`HoldState`** — holds a mechanism for a fixed time (`forSeconds`) or until a
+  condition (`until`), then releases it. The action is a `Consumer<Boolean>`
+  rather than a `Runnable` so that releasing belongs to the state and a motor
+  cannot be left running after the routine moves on.
+- **`StateMachineOpMode`** (`com.aaravlabs.autonomy.ftc`) — `OpMode` base class
+  extending Synapse's `SafeOpMode`. A subclass implements `buildStates()` and
+  nothing else; the base class runs the machine, calls the active state's
+  `stop()` when the OpMode is interrupted, and reports `Auto`, `State`,
+  `State time`, and `Auto time` to the Driver Station.
+- **R8 keep rules** at `META-INF/proguard/autonomy.pro`, for teams that build a
+  minified release APK.
+
+### Changed
+
+- **Repackaged** from `org.firstinspires.ftc.teamcode.autonomy` to
+  `com.aaravlabs.autonomy`. Class names, method signatures, and behaviour are
+  unchanged; this is a source-level rename only. Migrating means editing the
+  `package` line and your imports.
+- **Reformatted** from tabs to four spaces, matching Synapse and Engram.
+  No behavioural change.
+
+### Notes
+
+- Behaviour is unchanged from the in-tree version. The five original test
+  classes moved with the code and still pass unchanged, which is the reason to
+  believe the extraction was behaviour-preserving.
+- Three guard tests were added that did not exist in the team repo:
+  `NoAndroidApiLeakTest` (Android API 24 floor), `PackageBoundaryTest` (the core
+  stays plain Java), and `StateMachineOpModeLinkageTest` (the adapter still
+  matches the Synapse release it compiles against).
+- Published to GitHub Packages only. Maven Central is deliberately not wired up
+  yet: Central releases are permanently immutable, which is a poor fit for a
+  library that will move every week through a competition season. Adding it
+  later is purely additive.
