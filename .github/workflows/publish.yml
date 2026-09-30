@@ -55,6 +55,18 @@ jobs:
           java-version: '17'
 
       - name: Publish to GitHub Packages
+        # continue-on-error is deliberate. GitHub Packages answers 409 when a
+        # version already exists, which is exactly what happens when a release
+        # is re-run to fix a Central failure: the mirror got the artifacts on the
+        # first attempt and Central rejected them. Since Central is the
+        # authoritative channel and the mirror is a fallback, a mirror conflict
+        # must not block the publish that actually matters. Failures here still
+        # show up in the step log; they just do not stop the job.
+        #
+        # No signing credentials are passed on purpose -- Central requires
+        # signatures, the mirror does not, and this keeps the two unsigned
+        # artifacts from being confused with the signed ones.
+        continue-on-error: true
         run: ./gradlew --no-daemon publishMavenPublicationToGitHubPackagesRepository
         env:
           GITHUB_USER: ${{ github.actor }}
