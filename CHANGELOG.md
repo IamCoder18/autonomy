@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-30
+
+No source changes from 0.1.0 -- same classes, same tests, same behaviour. This
+version exists because of how the library is *distributed*.
+
+### Changed
+
+- **Published to Maven Central**, alongside the GitHub Packages mirror. Central
+  is reached through the Central Portal publisher API (`com.gradleup.nmcp.settings`)
+  because the legacy OSSRH staging API stopped accepting deployments in 2026.
+  Central consumers need no credentials, which makes it the path of least
+  resistance; the GitHub Packages mirror remains as a fallback.
+- **Artifacts are now GPG-signed**, because Central requires a signature on
+  every artifact and on the Gradle module metadata. Signing is conditional on
+  both `SIGNING_KEY` and `SIGNING_PASSWORD` being set, so nothing else in the
+  build changes when they are absent.
+- **0.1.0 is not superseded in place.** It stays on GitHub Packages, unsigned.
+  Reusing that version number for a signed build would give one version two
+  different sets of bytes depending on where a consumer found it, so this is a
+  new coordinate rather than a republish.
+
+### Notes
+
+- This is a patch bump, not a minor one. Nothing in the public API moved and no
+  class changed, so a consumer on 0.1.0 needs no code edits; what changed is how
+  the artifact is distributed and signed. A minor bump would imply a capability
+  the library does not have.
+
 ## [0.1.0] - 2026-09-30
 
 First release. The state machine was extracted from the Team 23684 robot code

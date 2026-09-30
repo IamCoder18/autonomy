@@ -151,9 +151,17 @@ dedicated one, generated in its own `GNUPGHOME` and used for Autonomy only.
 Note that the sibling projects under `com.aaravlabs` — Synapse and Engram — are
 signed by a *shared* key, whereas SafePedroPathing has its own because it is a
 fork with a different maintainer identity. If you would rather Autonomy join the
-`com.aaravlabs` key, regenerate with that key's passphrase before the first
-Central release: Central releases are immutable, so 0.1.0's signer cannot be
-changed afterwards.
+`com.aaravlabs` key, this was the last point at which that could be changed,
+because Central releases are immutable and 0.1.0's signer cannot be revised
+afterwards.
+
+**Decision, settled at 0.1.1:** Autonomy has its own key. The counter-argument
+was that Engram -- also `com.aaravlabs`, also a separate repository -- shares
+Synapse's key, so a single key per group would have been tidier. Autonomy
+gets its own anyway, on the grounds that a fork of this library should not be
+able to sign its releases with a key it does not hold, and because a key per
+project is easier to rotate or retire independently. The cost is that
+`com.aaravlabs` now has two signers, which Central does not mind.
 
 Central mirrors to `repo1.maven.org` on a delay, usually minutes but
 occasionally an hour. Search on
