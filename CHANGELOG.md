@@ -76,7 +76,12 @@ it was written in.
   `javap` output across both AARs. The bump is therefore a label change, but the
   next one will not be, so `SdkReferenceTest`'s allowlist is pinned to a specific
   SDK version and named after it.
-- Published to GitHub Packages only. Maven Central is deliberately not wired up
-  yet: Central releases are permanently immutable, which is a poor fit for a
-  library that will move every week through a competition season. Adding it
-  later is purely additive.
+- Published to Maven Central *and* GitHub Packages from the same tag. Central is
+  reached through the Central Portal publisher API (`com.gradleup.nmcp.settings`)
+  because the legacy OSSRH staging API stopped accepting deployments in 2026.
+  Central consumers need no credentials; the GitHub Packages mirror is a
+  fallback for setups that already authenticate against GitHub.
+- Signed with a dedicated GPG key, because Central requires a signature on every
+  artifact and on the Gradle module metadata. Signing is conditional on both
+  `SIGNING_KEY` and `SIGNING_PASSWORD` being set, so the GitHub Packages
+  publish stays unsigned and only the Central bundle is signed.

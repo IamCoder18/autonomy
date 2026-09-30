@@ -142,12 +142,23 @@ HoldState.until("Shoot", shooter::isShootComplete, on -> shooter.setRunning(on))
 
 ## Installation
 
-Autonomy is published to **GitHub Packages**. Note that GitHub requires a
-personal access token with the `read:packages` scope to pull a package *even
-when the repository is public* — that is a GitHub restriction, not an Autonomy
-one.
+Autonomy is published to **Maven Central**, which is the path you want. It
+needs no authentication, and the standard `FtcRobotController` template already
+declares `mavenCentral()`, so adding the dependency is all it takes:
 
-Add the repository to `build.dependencies.gradle`:
+```gradle
+dependencies {
+    implementation 'com.aaravlabs:autonomy:0.1.0'
+}
+```
+
+Autonomy also has a **GitHub Packages** mirror at
+`maven.pkg.github.com/IamCoder18/autonomy`. Note that GitHub requires a personal
+access token with the `read:packages` scope to pull a package *even when the
+repository is public* — that is a GitHub restriction, not an Autonomy one. If in
+doubt, use Maven Central above.
+
+To use the mirror instead, add the repository to `build.dependencies.gradle`:
 
 ```gradle
 repositories {

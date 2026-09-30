@@ -35,10 +35,11 @@ jobs:
           path: build/reports/tests/test/
 
   publish:
-    name: Publish to GitHub Packages
+    name: Publish
     runs-on: ubuntu-latest
     # Tag pushes cannot depend on the separate Test workflow, so tests are
-    # re-run here and the publish job is gated on them succeeding.
+    # re-run here and the publish job is gated on them succeeding. A failure
+    # here costs no Central deployment quota.
     needs: test
     permissions:
       contents: write
@@ -58,3 +59,21 @@ jobs:
         env:
           GITHUB_USER: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to Maven Central
+        # Uploads via the Central Portal publisher API (com.gradleup.nmcp) and
+        # auto-releases after validation. The legacy OSSRH staging API stopped
+        # accepting deployments in 2026.
+        #
+        # Central requires a GPG signature on every artifact *and* on the Gradle
+        # module metadata, so both the key and its passphrase are needed here.
+        # build.gradle signs the publication whenever SIGNING_KEY and
+        # SIGNING_PASSWORD are both set, and skips signing otherwise -- which is
+        # why the GitHub Packages step above deliberately does not receive them.
+        run: ./gradlew --no-daemon nmcpPublishAggregationToCentralPortal
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.GPG_PASSPHRASE }}
+

@@ -105,22 +105,61 @@ Releases are tag-triggered. To cut one:
 The tag push triggers the `Publish` workflow, which re-runs the tests and then
 publishes to GitHub Packages. If the publish step fails, fix and re-tag with a
 patch bump rather than re-running against a version that may already be
-partially uploaded.
+partially uploaded. The publish job is named "Publish" and runs both the
+GitHub Packages and the Central step, so a failure in the first does not skip
+the second; check Central's own state before re-running.
 
 Consumers pick the new version by bumping the coordinate in their
 `build.dependencies.gradle`. There is no snapshot channel, so a version that
-reaches GitHub Packages is the version everyone gets.
+reaches a repository is the version everyone gets.
 
-### Maven Central, later
+### Maven Central
 
-Autonomy publishes to GitHub Packages only, and that is deliberate: Maven
-Central releases are permanently immutable, which is a poor fit for a library
-that will move weekly through a competition season. Central also requires GPG
-signatures on every artifact plus mandatory sources and javadoc jars.
+Autonomy publishes to **Maven Central** and **GitHub Packages**, in that order,
+from the same tag. Central needs no credentials from consumers; the GitHub
+Packages mirror exists as a fallback and does.
 
-The `signing` block in `build.gradle` is already wired for it, so promoting
-Autonomy later is additive — publish `X.Y.Z` to Central without disturbing the
-`0.1.x` GitHub Packages line. Nothing needs retrofitting.
+Central is published through the Central Portal publisher API via
+`com.gradleup.nmcp.settings`, not the legacy OSSRH staging API, which stopped
+accepting deployments in 2026. It is a settings plugin because the aggregation
+it uploads has to be built from the root project.
+
+Central requires a GPG signature on every artifact **and** on the Gradle module
+metadata, plus mandatory sources and javadoc jars. All of that is configured;
+`./gradlew nmcpZipAggregation` produces the exact bundle Central receives, so
+you can inspect it before uploading:
+
+```bash
+# See what would be uploaded.
+./gradlew nmcpZipAggregation
+unzip -l build/nmcp/zip/aggregation.zip
+
+# Publish to Central locally (consumes a deployment).
+SONATYPE_USERNAME=… SONATYPE_PASSWORD=… \
+SIGNING_KEY="$(gpg --armor --export-secret-keys)" SIGNING_PASSWORD=… \
+  ./gradlew nmcpPublishAggregationToCentralPortal
+```
+
+The `signing` block in `build.gradle` signs only when **both** `SIGNING_KEY` and
+`SIGNING_PASSWORD` are set, and skips signing otherwise. That is deliberate: the
+GitHub Packages step gets neither, so the mirror stays unsigned, and the Central
+step gets both, because Central rejects an unsigned bundle.
+
+Secrets live in the repository's GitHub Actions secrets: `SONATYPE_USERNAME`,
+`SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`. The GPG key is a
+dedicated one, generated in its own `GNUPGHOME` and used for Autonomy only.
+Note that the sibling projects under `com.aaravlabs` — Synapse and Engram — are
+signed by a *shared* key, whereas SafePedroPathing has its own because it is a
+fork with a different maintainer identity. If you would rather Autonomy join the
+`com.aaravlabs` key, regenerate with that key's passphrase before the first
+Central release: Central releases are immutable, so 0.1.0's signer cannot be
+changed afterwards.
+
+Central mirrors to `repo1.maven.org` on a delay, usually minutes but
+occasionally an hour. Search on
+<https://central.sonatype.com/artifact/com.aaravlabs/autonomy> for the
+authoritative release state — note that `search.maven.org`'s Solr API is stale
+and can report `numFound: 0` for artifacts that are genuinely published.
 
 ## Reporting issues
 
