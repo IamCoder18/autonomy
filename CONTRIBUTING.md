@@ -145,6 +145,30 @@ The `signing` block in `build.gradle` signs only when **both** `SIGNING_KEY` and
 GitHub Packages step gets neither, so the mirror stays unsigned, and the Central
 step gets both, because Central rejects an unsigned bundle.
 
+**The signing key must be on a PGP keyserver.** Central does not accept a
+signature it cannot resolve. Publishing a bundle signed by a key that lives
+only in a local keyring fails validation with:
+
+```
+Invalid signature for file: autonomy-X.Y.Z.jar.asc --
+Could not find a public key by the key fingerprint.
+Please ensure it is uploaded to one of the PGP servers we support.
+```
+
+Nothing is released when that happens — validation runs before the automatic
+release — so the version is not burned and you can fix and re-publish. Push the
+key once per new key:
+
+```bash
+gpg --keyserver hkps://keyserver.ubuntu.com --send-keys <FINGERPRINT>
+```
+
+Use **`keyserver.ubuntu.com`**, not `keys.openpgp.org`. The latter verifies
+email addresses before accepting a key and silently strips the user ID from
+anything it cannot verify, so a UID at `users.noreply.github.com` is dropped and
+the key arrives unusable. Ubuntu's keyserver does no such verification, which
+is why the sibling `com.aaravlabs` releases are signed by a key hosted there.
+
 Secrets live in the repository's GitHub Actions secrets: `SONATYPE_USERNAME`,
 `SONATYPE_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`. The GPG key is a
 dedicated one, generated in its own `GNUPGHOME` and used for Autonomy only.
