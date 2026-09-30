@@ -16,9 +16,15 @@ plugins {
 }
 
 group = 'com.aaravlabs'
-version = '0.1.2'
+version = '0.1.3'
 
 description = 'A state-machine framework for FTC autonomous routines.'
+
+// The FTC SDK whose API the compile-time stubs mirror, and the release the
+// build is verified against. Every class the stub covers was checked to be
+// byte-for-byte identical between 11.2.1 and 12.0.0, so either works; this
+// names the one this build proves itself against.
+ext.ftcSdkVersion = '11.2.1'
 
 java {
     // Matches Synapse and Engram. The FTC adapter extends Synapse's SafeOpMode,
@@ -85,6 +91,51 @@ def ftcStubJar = tasks.register('ftcStubJar', Jar) {
     // the file for no reason.
     preserveFileTimestamps = false
     reproducibleFileOrder = true
+}
+
+// ---- Real FTC SDK, for verifying the stub ---------------------------------
+//
+// The stub above is hand-written, and a hand-written stub that is more
+// permissive than the real SDK produces a jar that compiles, passes every
+// test, and throws NoSuchMethodError on a Robot Controller. That is not
+// hypothetical: the first version declared `void Telemetry.update()` when
+// the SDK declares `boolean update()`, and 0.1.2 shipped that way.
+//
+// A hand-written allowlist is not enough on its own, because the entry that
+// gets written from memory rather than from the AAR is precisely the one
+// that ships the bug.
+//
+// So the real SDK is resolved here and its class files extracted for a test
+// to read directly. RobotCore is on Maven Central and needs no credentials.
+// The extracted classes.jar is NEVER put on a compile or test classpath: it
+// declares the same types as the stub, so both on one classpath is a
+// duplicate-class conflict. FtcStubFidelityTest reads the bytes off disk.
+configurations {
+    realFtcSdk
+}
+
+dependencies {
+    // transitive = false: only RobotCore's own classes.jar is read, and its
+    // dependency tree drags in androidx from Google's Maven repo, which this
+    // build does not declare and has no other reason to.
+    realFtcSdk("org.firstinspires.ftc:RobotCore:${ftcSdkVersion}") { transitive = false }
+}
+
+def extractRealFtcSdk = tasks.register('extractRealFtcSdk', Copy) {
+    description = 'Extracts classes.jar from the real RobotCore AAR, for stub verification only.'
+    group = 'verification'
+    from({ configurations.realFtcSdk.collect { zipTree(it) } }) {
+        include 'classes.jar'
+    }
+    into layout.buildDirectory.dir('real-ftc-sdk')
+    rename { 'classes.jar' }
+}
+
+tasks.named('test') {
+    dependsOn extractRealFtcSdk
+    systemProperty 'autonomy.realFtcSdk',
+            layout.buildDirectory.file('real-ftc-sdk/classes.jar').get().asFile.absolutePath
+    systemProperty 'autonomy.ftcSdkVersion', ftcSdkVersion.toString()
 }
 
 dependencies {

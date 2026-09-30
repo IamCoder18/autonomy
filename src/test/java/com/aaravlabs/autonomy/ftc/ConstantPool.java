@@ -84,6 +84,67 @@ final class ConstantPool {
                 "cannot find the compiled adapter at " + classes + "; run ./gradlew test");
     }
 
+    /**
+     * Reads the {@code methods} table of a class file and returns every declared
+     * method as {@code name:descriptor}.
+     *
+     * <p>Descriptors rather than Java signatures, because the descriptor is what
+     * the JVM matches. {@code boolean update()} and {@code void update()} are both
+     * "update()" to anyone reading source, and {@code update()Z} versus
+     * {@code update()V} to the linker -- and only the second distinction is fatal.
+     * That gap is exactly how a wrong return type reaches a Robot Controller with
+     * every test green.
+     *
+     * <p>A class file is header, constant pool, access/this/super/interfaces,
+     * {@code fields}, {@code methods}, {@code attributes}. Fields and methods
+     * have the same shape, so both tables are walked with one skipping loop.
+     */
+    static Set<String> declaredMethods(byte[] classFile) throws IOException {
+        ConstantPool pool = new ConstantPool(classFile);
+
+        int at = 10;
+        for (byte[] entry : pool.entries) {
+            if (entry != null) {
+                at += entry.length;   // null is the second slot of a long or double
+            }
+        }
+
+        at += 2;   // access_flags
+        at += 2;   // this_class
+        at += 2;   // super_class
+        int interfaces = pool.u2(pool.bytes, at);
+        at += 2 + interfaces * 2;
+
+        int fieldCount = pool.u2(pool.bytes, at);
+        at += 2;
+        for (int i = 0; i < fieldCount; i++) {
+            at = skipMember(pool, at);
+        }
+
+        int methodCount = pool.u2(pool.bytes, at);
+        at += 2;
+        Set<String> methods = new LinkedHashSet<>();
+        for (int i = 0; i < methodCount; i++) {
+            // access_flags(2) name(2) descriptor(2) attribute_count(2)
+            String name = pool.utf8(pool.u2(pool.bytes, at + 2));
+            String descriptor = pool.utf8(pool.u2(pool.bytes, at + 4));
+            methods.add(name + ":" + descriptor);
+            at = skipMember(pool, at);
+        }
+        return methods;
+    }
+
+    /** Skips one field_info or method_info, past its attributes. */
+    private static int skipMember(ConstantPool pool, int at) {
+        int attributeCount = pool.u2(pool.bytes, at + 6);
+        at += 8;
+        for (int i = 0; i < attributeCount; i++) {
+            int length = pool.u4(pool.bytes, at + 2);
+            at += 6 + length;
+        }
+        return at;
+    }
+
     // ---- constant pool decoding ------------------------------------------------
 
     private final byte[] bytes;

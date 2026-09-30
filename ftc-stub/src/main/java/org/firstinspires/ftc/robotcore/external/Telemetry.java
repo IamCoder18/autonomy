@@ -43,8 +43,24 @@ public interface Telemetry {
      */
     Item addData(String cap, String format, Object... args);
 
-    /** Flushes the accumulated lines to the Driver Station. */
-    void update();
+    /**
+     * Flushes the accumulated lines to the Driver Station.
+     *
+     * <p><strong>Returns {@code boolean}, not {@code void}.</strong> That is the
+     * difference between this compiling and the robot working. The first version
+     * of this stub declared {@code void update()}, which made every call site
+     * compile and every test pass, and then threw on the Robot Controller:
+     *
+     * <pre>{@code
+     * java.lang.NoSuchMethodError: No interface method update()V in class
+     *   Lorg/firstinspires/ftc/robotcore/external/Telemetry;
+     * }</pre>
+     *
+     * <p>Returning a value the caller ignores is legal Java, so nothing warns
+     * about it. But the compiled call names the descriptor {@code ()V} and the
+     * SDK declares {@code ()Z}, and the JVM matches descriptors exactly.
+     */
+    boolean update();
 
     /** A single telemetry line, for further configuration before the next update. */
     interface Item {

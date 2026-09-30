@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-30
+
+### Fixed
+
+- **`Telemetry.update()` returned the wrong type in the compile-time stub, which
+  broke every auto on a Robot Controller.** The stub declared `void update()`
+  where the SDK declares `boolean update()`. The call site compiled, the whole
+  test suite passed, and the first telemetry flush threw:
+
+  ```
+  java.lang.NoSuchMethodError: No interface method update()V in class
+    Lorg/firstinspires/ftc/robotcore/external/Telemetry;
+      at com.aaravlabs.autonomy.ftc.StateMachineOpMode.reportTelemetry
+  ```
+
+  Every call site named the descriptor `()V` where the SDK declares `()Z`.
+  Ignoring a return value is legal Java, so nothing warned; the JVM matches
+  descriptors exactly, so nothing worked. **Upgrade to 0.1.3 to fix this.**
+  0.1.2 and 0.1.1 cannot be repaired -- Maven Central releases are immutable --
+  so if you are on either, move.
+
+  Not an SDK version problem: `Telemetry.update()` returns `boolean` in both
+  11.2.1 and 12.0.0.
+
+### Added
+
+- **`FtcStubFidelityTest`**, which verifies the hand-written FTC stubs against
+  the real SDK instead of against a hand-written list. The build resolves
+  `org.firstinspires.ftc:RobotCore` and extracts its `classes.jar`; the test
+  compares the stub's declared methods to the real ones by descriptor.
+
+  This exists because the existing `SdkReferenceTest` allowlist is a constant
+  in source, and the entry typed from memory rather than transcribed from the
+  AAR was the one that shipped the bug -- the test was checking that my
+  assumption agreed with itself. The new test has no hand-maintained list in
+  the loop.
+
+  Verified by reintroducing `void update()`: three tests fail, and the message
+  names the mismatch and the consequence.
+
+### Changed
+
+- `ftcSdkVersion` now names 11.2.1 in `build.gradle`, and the
+  `SdkReferenceTest` allowlist is labelled to match. The stub was verified
+  against both 11.2.1 and 12.0.0 earlier and covers classes that are identical
+  across the two, so either works; the build now proves itself against the one
+  it names.
+
 ## [0.1.2] - 2026-09-30
 
 No source changes from 0.1.0 -- same classes, same tests, same behaviour. This
