@@ -271,7 +271,7 @@ be rejected:
   that is more permissive than the real SDK produces a jar that compiles, passes
   every other test, and throws `NoSuchMethodError` on a robot. This reads the
   references out of the compiled bytecode and requires each to be a member
-  RobotCore 11.2.1 actually declares. It earned its place immediately: it caught
+  RobotCore 12.0.0 actually declares. It earned its place immediately: it caught
   a stub that declared `addData(String, Object, Object...)` when the real
   signature is `addData(String, String, Object...)`.
 

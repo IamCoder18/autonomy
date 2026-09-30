@@ -24,18 +24,18 @@ import static org.junit.jupiter.api.Assertions.fail;
  * passes every other test, and throws {@code NoSuchMethodError} on a robot.
  *
  * <p>That is not hypothetical. The first version of the {@code Telemetry} stub
- * declared {@code addData(String, Object, Object...)}. SDK 11.2.1 declares
+ * declared {@code addData(String, Object, Object...)}. The SDK declares
  * {@code addData(String, String, Object...)} -- the format parameter is a
  * {@code String}. Every test passed and the published jar was broken.
  *
  * <p>So this test reads the {@code Methodref}s and {@code Fieldref}s out of the
  * compiled {@code StateMachineOpMode} and requires each to appear in
- * {@link #SDK_11_2_1}. That list was produced by running {@code javap} against
- * the real {@code RobotCore-11.2.1.aar}:
+ * {@link #SDK_12_0_0}. That list was produced by running {@code javap} against
+ * the real {@code RobotCore-12.0.0.aar}:
  *
  * <pre>{@code
- * javap -cp RobotCore-11.2.1.aar org.firstinspires.ftc.robotcore.external.Telemetry
- * javap -p -cp RobotCore-11.2.1.aar com.qualcomm.robotcore.eventloop.opmode.OpModeInternal
+ * javap -cp RobotCore-12.0.0.aar org.firstinspires.ftc.robotcore.external.Telemetry
+ * javap -p -cp RobotCore-12.0.0.aar com.qualcomm.robotcore.eventloop.opmode.OpModeInternal
  * }</pre>
  *
  * <p><strong>When you bump the Synapse dependency, re-run those two commands
@@ -51,7 +51,7 @@ class SdkReferenceTest {
 
     /**
      * Every SDK member {@code StateMachineOpMode} is allowed to reference,
-     * transcribed from {@code org.firstinspires.ftc:RobotCore:11.2.1}.
+     * transcribed from {@code org.firstinspires.ftc:RobotCore:12.0.0}.
      *
      * <p>Field references are listed with the owner javac emits, which is the
      * class the field is accessed through rather than the one that declares it.
@@ -61,8 +61,8 @@ class SdkReferenceTest {
      * Methods do <em>not</em> get that treatment -- an overload mismatch is
      * unresolvable -- which is exactly why {@code addData} had to be right.
      */
-    private static final Set<String> SDK_11_2_1 = new LinkedHashSet<>(java.util.List.of(
-            // OpMode lifecycle. Declared on OpMode in SDK 11.2.1.
+    private static final Set<String> SDK_12_0_0 = new LinkedHashSet<>(java.util.List.of(
+            // OpMode lifecycle. Declared on OpMode in SDK 12.0.0.
             "com/qualcomm/robotcore/eventloop/opmode/OpMode.init:()V",
             "com/qualcomm/robotcore/eventloop/opmode/OpMode.loop:()V",
             "com/qualcomm/robotcore/eventloop/opmode/OpMode.stop:()V",
@@ -80,7 +80,7 @@ class SdkReferenceTest {
     ));
 
     @Test
-    @DisplayName("references only SDK members that RobotCore 11.2.1 actually declares")
+    @DisplayName("references only SDK members that RobotCore 12.0.0 actually declares")
     void referencesOnlyRealSdkMembers() throws IOException {
         Set<String> emitted = ConstantPool.externalReferences(ADAPTER);
 
@@ -88,10 +88,10 @@ class SdkReferenceTest {
                 "no SDK references found in " + ADAPTER + "; the scan would pass vacuously");
 
         Set<String> unknown = new TreeSet<>(emitted);
-        unknown.removeAll(SDK_11_2_1);
+        unknown.removeAll(SDK_12_0_0);
 
         if (!unknown.isEmpty()) {
-            fail("StateMachineOpMode references SDK members that RobotCore 11.2.1 does not"
+            fail("StateMachineOpMode references SDK members that RobotCore 12.0.0 does not"
                     + " declare. The stub in ftc-stub/ is more permissive than the real SDK, so"
                     + " this compiles here and throws NoSuchMethodError on a robot.\n"
                     + "  Unrecognised: " + unknown + "\n"
@@ -137,7 +137,7 @@ class SdkReferenceTest {
                 "com/qualcomm/robotcore/eventloop/opmode/OpMode.loop:()V",
                 "com/qualcomm/robotcore/eventloop/opmode/OpMode.stop:()V"));
 
-        Set<String> dead = new TreeSet<>(SDK_11_2_1);
+        Set<String> dead = new TreeSet<>(SDK_12_0_0);
         dead.removeAll(emitted);
         dead.removeAll(possiblyUnreferenced);
 

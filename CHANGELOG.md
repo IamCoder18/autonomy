@@ -60,7 +60,7 @@ it was written in.
   `NoAndroidApiLeakTest` (Android API 24 floor), `PackageBoundaryTest` (the core
   stays plain Java), `StateMachineOpModeLinkageTest` (the adapter still matches
   the Synapse release it compiles against), and `SdkReferenceTest` (every FTC SDK
-  member the compiled adapter references is one RobotCore 11.2.1 actually
+  member the compiled adapter references is one RobotCore 12.0.0 actually
   declares).
 - `SdkReferenceTest` earned its keep during the extraction. The first draft of
   the `Telemetry` stub declared `addData(String, Object, Object...)`; the real
@@ -70,6 +70,12 @@ it was written in.
   `NoSuchMethodError` on the first telemetry update of a match. The stub also
   now mirrors the real hierarchy, where `OpMode` extends the package-private
   `OpModeInternal` that declares `telemetry` and `hardwareMap`.
+- **SDK baseline is 12.0.0.** Every class the FTC stub covers -- `OpMode`,
+  `OpModeInternal`, `Telemetry`, `Telemetry.Item`, `HardwareMap`, `Gamepad` --
+  is byte-for-byte identical between SDK 11.2.1 and 12.0.0, verified by diffing
+  `javap` output across both AARs. The bump is therefore a label change, but the
+  next one will not be, so `SdkReferenceTest`'s allowlist is pinned to a specific
+  SDK version and named after it.
 - Published to GitHub Packages only. Maven Central is deliberately not wired up
   yet: Central releases are permanently immutable, which is a poor fit for a
   library that will move every week through a competition season. Adding it

@@ -20,7 +20,7 @@ import java.util.Set;
  *
  * <p>That is not hypothetical. An early version of the {@code Telemetry} stub
  * declared {@code addData(String, Object, Object...)}, on the reasonable but
- * wrong reading that the format argument was an {@code Object}. SDK 11.2.1
+ * wrong reading that the format argument was an {@code Object}. SDK 12.0.0
  * declares {@code addData(String, String, Object...)} -- the format is a
  * {@code String}. The call site compiled, and the published jar carried a
  * {@code Methodref} for an overload that does not exist.
