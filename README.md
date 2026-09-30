@@ -239,9 +239,10 @@ signal to push the hardware access behind an interface you can fake.
 
 ## Testing & development
 
-35 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
+38 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
 behaviour, misuse, argument validation, the Android API-level floor, the
-package boundary, and the link to Synapse.
+package boundary, the link to Synapse, and the exact SDK members the compiled
+adapter references.
 
 ```bash
 ./gradlew build                     # compile and test
@@ -265,6 +266,14 @@ be rejected:
 - **`StateMachineOpModeLinkageTest`** — asserts the adapter still lines up with
   the Synapse release it compiles against, so a Synapse rename fails on a laptop
   rather than as an `AbstractMethodError` on a competition day.
+- **`SdkReferenceTest`** — the important one. Autonomy compiles its adapter
+  against hand-written SDK stubs, because the real SDK ships only as AARs. A stub
+  that is more permissive than the real SDK produces a jar that compiles, passes
+  every other test, and throws `NoSuchMethodError` on a robot. This reads the
+  references out of the compiled bytecode and requires each to be a member
+  RobotCore 11.2.1 actually declares. It earned its place immediately: it caught
+  a stub that declared `addData(String, Object, Object...)` when the real
+  signature is `addData(String, String, Object...)`.
 
 ## Contributing
 

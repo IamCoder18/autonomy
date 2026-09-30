@@ -56,10 +56,20 @@ it was written in.
 - Behaviour is unchanged from the in-tree version. The five original test
   classes moved with the code and still pass unchanged, which is the reason to
   believe the extraction was behaviour-preserving.
-- Three guard tests were added that did not exist in the team repo:
+- Four guard tests were added that did not exist in the team repo:
   `NoAndroidApiLeakTest` (Android API 24 floor), `PackageBoundaryTest` (the core
-  stays plain Java), and `StateMachineOpModeLinkageTest` (the adapter still
-  matches the Synapse release it compiles against).
+  stays plain Java), `StateMachineOpModeLinkageTest` (the adapter still matches
+  the Synapse release it compiles against), and `SdkReferenceTest` (every FTC SDK
+  member the compiled adapter references is one RobotCore 11.2.1 actually
+  declares).
+- `SdkReferenceTest` earned its keep during the extraction. The first draft of
+  the `Telemetry` stub declared `addData(String, Object, Object...)`; the real
+  SDK declares `addData(String, String, Object...)`, with the format parameter
+  typed `String`. The call sites compiled, every other test passed, and the
+  published jar carried a `Methodref` for an overload that does not exist — a
+  `NoSuchMethodError` on the first telemetry update of a match. The stub also
+  now mirrors the real hierarchy, where `OpMode` extends the package-private
+  `OpModeInternal` that declares `telemetry` and `hardwareMap`.
 - Published to GitHub Packages only. Maven Central is deliberately not wired up
   yet: Central releases are permanently immutable, which is a poor fit for a
   library that will move every week through a competition season. Adding it
