@@ -36,8 +36,8 @@ public class ExampleAuto extends StateMachineOpMode {
 ```
 
 That is the whole OpMode. Running the sequence, releasing the intake when the
-routine is interrupted, and printing progress to the Driver Station all happen
-in the base class.
+routine is interrupted, ending the OpMode once the route is done, and printing
+progress to the Driver Station all happen in the base class.
 
 ## Why Autonomy?
 
@@ -148,7 +148,7 @@ declares `mavenCentral()`, so adding the dependency is all it takes:
 
 ```gradle
 dependencies {
-    implementation 'com.aaravlabs:autonomy:0.1.0'
+    implementation 'com.aaravlabs:autonomy:0.1.3'
 }
 ```
 
@@ -174,7 +174,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.aaravlabs:autonomy:0.1.0'
+    implementation 'com.aaravlabs:autonomy:0.1.3'
 }
 ```
 
@@ -217,7 +217,7 @@ own, and only the `ftc` subpackage does.
 | `stop()` | Ends early, running the active state's `stop()`. |
 | `currentState()` / `currentIndex()` | What is running, for telemetry. |
 | `elapsedSeconds()` / `currentStateElapsedSeconds()` | Timing, for tuning a route. |
-| `isFinished()` | Stops the OpMode loop when true. |
+| `isFinished()` | True once the route is exhausted. `StateMachineOpMode` reads this to end the OpMode. |
 
 A machine **cannot be replayed** — build a new one per run. Its states carry
 whatever they accumulated last time, and reusing them is the one way to get an
@@ -250,7 +250,7 @@ signal to push the hardware access behind an interface you can fake.
 
 ## Testing & development
 
-38 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
+60 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
 behaviour, misuse, argument validation, the Android API-level floor, the
 package boundary, the link to Synapse, and the exact SDK members the compiled
 adapter references.
@@ -263,7 +263,7 @@ adapter references.
 
 Requirements: JDK 11+, Gradle 9.x (the wrapper is checked in).
 
-Three of the tests are guards rather than behaviour tests, and they are worth
+Several of the tests are guards rather than behaviour tests, and they are worth
 knowing about because they are the reason some seemingly harmless changes will
 be rejected:
 
@@ -277,14 +277,28 @@ be rejected:
 - **`StateMachineOpModeLinkageTest`** — asserts the adapter still lines up with
   the Synapse release it compiles against, so a Synapse rename fails on a laptop
   rather than as an `AbstractMethodError` on a competition day.
-- **`SdkReferenceTest`** — the important one. Autonomy compiles its adapter
-  against hand-written SDK stubs, because the real SDK ships only as AARs. A stub
+- **`FtcStubFidelityTest`** — the important one, and the reason the previous two
+  releases shipped broken jars. Autonomy compiles its adapter against
+  hand-written SDK stubs, because the real SDK ships only as AARs, and a stub
   that is more permissive than the real SDK produces a jar that compiles, passes
-  every other test, and throws `NoSuchMethodError` on a robot. This reads the
-  references out of the compiled bytecode and requires each to be a member
-  RobotCore 12.0.0 actually declares. It earned its place immediately: it caught
-  a stub that declared `addData(String, Object, Object...)` when the real
-  signature is `addData(String, String, Object...)`.
+  every other test, and throws `NoSuchMethodError` on a robot. 0.1.2 shipped a
+  stub declaring `void update()` where the SDK declares `boolean update()`.
+  So this one resolves the real `RobotCore` AAR and compares the stub against it
+  by descriptor, every class and every member, with no hand-written list in the
+  loop. It earned its place twice more: it caught `@Autonomous`'s stub declaring
+  `preselectTeleOp()` as `int` where the SDK declares `String`, and
+  `HardwareMap.get(String)` stubbed as returning `Object` where the SDK returns
+  `HardwareDevice`.
+- **`SdkReferenceTest`** — the companion to the above. Where that one asks "is
+  the stub faithful?", this asks "what does the adapter actually call?", and
+  checks each reference resolves in the real AAR rather than only against a list
+  of expected members. Both directions matter: a dead allowlist entry is a
+  permission nobody checks, which is why there is no exemption list.
+- **`StateMachineOpModeEndsItselfTest`** — that a finished route actually ends
+  the OpMode. The SDK drives an OpMode as `while (!stopRequested) { loop(); }`,
+  so a routine that runs out of states without asking to stop keeps looping until
+  the Robot Controller force-kills it at the match timer: hardware already
+  released, Driver Station still showing RUNNING.
 
 ## Contributing
 

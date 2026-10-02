@@ -42,8 +42,20 @@ supplies the genuine classes at runtime, so the stub is `compileOnly` and never
 reaches the published artifact — the POM has no trace of it.
 
 The one rule: **stub signatures must match the real SDK exactly.** A stub that
-drifts compiles cleanly and then throws `NoSuchMethodError` on a robot. If you
-bump the Synapse dependency, re-read its changelog and check
+drifts compiles cleanly and then throws `NoSuchMethodError` on a robot. This is
+not hypothetical: 0.1.2 shipped a stub declaring `void update()` where the SDK
+declares `boolean update()`, and every test passed.
+
+So the stubs are not reviewed by eye. `FtcStubFidelityTest` resolves the real
+`RobotCore` AAR and compares **every class and every member** of the stub
+against it by descriptor, fields included, with no hand-maintained list in the
+loop. If you touch a stub, that test is the arbiter — and if it fails, the fix is
+to read the descriptor out of the real AAR, never to adjust the test. Two
+further bugs came out of it: `@Autonomous`'s stub declared `preselectTeleOp()`
+as `int` where the SDK declares `String`, and `HardwareMap.get(String)` stubbed
+as returning `Object` where the SDK returns `HardwareDevice`.
+
+If you bump the Synapse dependency, re-read its changelog and check
 `StateMachineOpModeLinkageTest`, which asserts the adapter's contract against
 the real Synapse jar.
 
@@ -85,6 +97,12 @@ GITHUB_USER=<your-github-username> GITHUB_TOKEN=$(gh auth token) \
   arithmetic. `NoAndroidApiLeakTest` enforces this too.
 - **No mutable static state.** It is shared across every `StateMachine` in the
   process and survives `stop()`, so one run's leftovers leak into the next.
+- **`setEndCondition` goes in `init()`, never in `loop()`.** The condition is
+  read after every `loop()`, so one installed during the first iteration is seen
+  a cycle late and the state ends after a single loop. That is the
+  "state got skipped" bug the library exists to design out, so it is treated as
+  one: `StateMachineOpMode` reports any state that never set a condition as a
+  `State problem` telemetry line, for the rest of the run.
 - **States take dependencies through constructors.** A state that looks up a
   device itself cannot be unit tested, which defeats the point.
 - **Tests for new behaviour.** Ordering, timing, and abort guarantees are the
@@ -99,7 +117,9 @@ Releases are tag-triggered. To cut one:
 1. Update `version` in `build.gradle`.
 2. Add a heading to `CHANGELOG.md` describing what changed.
 3. Commit on `main` and push. Wait for the `Test` workflow to go green.
-4. Tag: `git tag vX.Y.Z`.
+4. Tag: `git tag vX.Y.Z`. The tag must match `version` exactly — the publish
+   workflow fails the build otherwise, rather than publishing one version's bytes
+   under another version's name.
 5. Push: `git push origin main --tags`.
 
 The tag push triggers the `Publish` workflow, which re-runs the tests and then

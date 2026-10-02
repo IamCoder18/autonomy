@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Reads the constant pool of a compiled class and reports every reference it
@@ -20,34 +23,62 @@ import java.util.Set;
  *
  * <p>That is not hypothetical. An early version of the {@code Telemetry} stub
  * declared {@code addData(String, Object, Object...)}, on the reasonable but
- * wrong reading that the format argument was an {@code Object}. SDK 12.0.0
+ * wrong reading that the format argument was an {@code Object}. SDK 11.2.1
  * declares {@code addData(String, String, Object...)} -- the format is a
  * {@code String}. The call site compiled, and the published jar carried a
  * {@code Methodref} for an overload that does not exist.
  *
  * <p>{@link SdkReferenceTest} closes that hole by checking the references the
- * compiled adapter actually emits against a list transcribed from the real SDK.
- * It cannot prove the list is still correct when the SDK moves; it can prove the
- * stub has not drifted away from the list, which is the far more likely accident.
+ * compiled adapter actually emits against the real SDK. It cannot prove the stub
+ * is still faithful when the SDK moves; {@link FtcStubFidelityTest} does that,
+ * by reading the AAR.
  */
 final class ConstantPool {
 
     /**
-     * Returns every field, method, and interface-method reference the named
-     * class makes into {@code com/qualcomm/}, {@code org/firstinspires/}, or
-     * {@code android/}, formatted as {@code owner.name:descriptor}.
+     * Every field, method, and interface-method reference the named class makes into the FTC
+     * SDK, formatted as {@code owner.name:descriptor}.
      *
-     * <p>Includes the class's own declarations in {@code owner.name}, so
-     * references to Autonomy's own types are filtered out by the caller's
-     * prefix filter rather than being special-cased here.
+     * <p><strong>Classifying a reference as "the SDK" is the whole difficulty here,</strong>
+     * and neither half of it can be left to a prefix test:
+     *
+     * <ul>
+     * <li>An <em>owner</em> prefix test misses inherited members. javac emits the
+     *     <em>qualifying</em> type as the owner, not the declaring one, so
+     *     {@code this.telemetry} and an unqualified {@code requestOpModeStop()} come out
+     *     with {@code StateMachineOpMode} as their owner:
+     *
+     *     <pre>{@code
+     *     Fieldref  StateMachineOpMode.telemetry : Lorg/firstinspires/.../Telemetry;
+     *     Methodref StateMachineOpMode.requestOpModeStop : ()V
+     *     }</pre>
+     *
+     *     Those resolve at runtime -- the JVM walks the superclass chain, JVMS 5.4.3.2 --
+     *     but an owner-prefix test drops them, which is how the one SDK <em>field</em> the
+     *     adapter reads went unverified, and how {@code requestOpModeStop()} went with it.
+     *
+     * <li>A <em>descriptor</em> prefix test misses the same references from the other side.
+     *     {@code requestOpModeStop}'s descriptor is {@code ()V}, which names no type at all.
+     * </ul>
+     *
+     * <p>So the rule is structural: a reference owned by the adapter belongs to the SDK if
+     * the adapter does not declare it itself, because everything the adapter does not
+     * declare has to come from one of its superclasses. Everything else is classified by
+     * owner.
+     *
+     * <p>{@code ignoreOwningClass} is the adapter, and {@code ignorePrefixes} are the trees
+     * that are not the robot's problem here: the framework's own classes (covered by
+     * {@code PackageBoundaryTest}) and the JDK.
      */
-    static Set<String> externalReferences(String className) throws IOException {
-        byte[] bytes = Files.readAllBytes(locate(className));
+    static Set<String> sdkReferences(
+            String classFile, String ignoreOwningClass, String... ignorePrefixes)
+            throws IOException {
+        byte[] bytes = Files.readAllBytes(locate(classFile));
         ConstantPool pool = new ConstantPool(bytes);
+        Set<String> ownMembers = pool.declaredMembers(bytes).all();
         Set<String> found = new LinkedHashSet<>();
 
-        for (int i = 1; i < pool.entries.length; i++) {
-            byte[] entry = pool.entries[i];
+        for (byte[] entry : pool.entries) {
             if (entry == null) {
                 continue;
             }
@@ -55,33 +86,103 @@ final class ConstantPool {
             if (tag != 9 && tag != 10 && tag != 11) { // Fieldref, Methodref, InterfaceMethodref
                 continue;
             }
-            int classIndex = pool.u2(entry, 1);
-            int nameAndTypeIndex = pool.u2(entry, 3);
+            int nameAndTypeIndex = ConstantPool.u2(entry, 3);
+            String owner = pool.className(ConstantPool.u2(entry, 1));
+            String name = pool.utf8(ConstantPool.u2(pool.entries[nameAndTypeIndex], 1));
+            String descriptor = pool.utf8(ConstantPool.u2(pool.entries[nameAndTypeIndex], 3));
+            String reference = owner + "." + name + ":" + descriptor;
 
-            String owner = pool.className(classIndex);
-            String name = pool.utf8(pool.u2(pool.entries[nameAndTypeIndex], 1));
-            String descriptor = pool.utf8(pool.u2(pool.entries[nameAndTypeIndex], 3));
-
-            if (isExternal(owner)) {
-                found.add(owner + "." + name + ":" + descriptor);
+            if (owner.equals(ignoreOwningClass)) {
+                // Inherited: anything the adapter declares itself is its own business.
+                if (!ownMembers.contains(name + ":" + descriptor)) {
+                    found.add(reference);
+                }
+                continue;
+            }
+            boolean ignored = false;
+            for (String prefix : ignorePrefixes) {
+                if (owner.startsWith(prefix)) {
+                    ignored = true;
+                    break;
+                }
+            }
+            if (!ignored) {
+                found.add(reference);
             }
         }
         return found;
     }
 
-    private static boolean isExternal(String internalName) {
-        return internalName.startsWith("com/qualcomm/")
-                || internalName.startsWith("org/firstinspires/")
-                || internalName.startsWith("android/");
+    /**
+     * The internal name of a class's superclass, or {@code null} for {@code java/lang/Object}
+     * and the class file's root.
+     *
+     * <p>Read from the class file rather than through {@code Class.getSuperclass()} on purpose:
+     * the whole point is to walk the <em>real</em> SDK's hierarchy, and the only real SDK on
+     * this machine is the extracted {@code classes.jar}.
+     */
+    static String superName(byte[] classFile) throws IOException {
+        ConstantPool pool = new ConstantPool(classFile);
+
+        int at = 10;
+        for (byte[] entry : pool.entries) {
+            if (entry != null) {
+                at += entry.length;
+            }
+        }
+        at += 2;   // access_flags
+        at += 2;   // this_class
+        int superIndex = ConstantPool.u2(pool.bytes, at);
+        if (superIndex == 0) {
+            return null;
+        }
+        String name = pool.className(superIndex);
+        return name.equals("java/lang/Object") ? null : name;
+    }
+
+    /**
+     * Lists every compiled class under an internal package prefix, e.g.
+     * {@code com/aaravlabs/autonomy/ftc/}.
+     *
+     * <p>Scanning one named class file is not enough. javac puts a lambda's body in the
+     * enclosing class, but only because it usually can: {@code invokedynamic} may also
+     * emit a separate synthetic holder, and anything the compiler chose to place there
+     * would carry its own constant pool. A guard that reads one file has to trust that
+     * decision; one that reads the package does not.
+     */
+    static List<String> listClasses(String internalPackagePrefix) throws IOException {
+        Path classes = compiledClassesDirectory();
+        List<String> names = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(classes)) {
+            walk.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".class"))
+                    .forEach(p -> {
+                        String name = classes.relativize(p).toString();
+                        // Strip .class: these are internal names, which is what callers
+                        // must compare against constant pool owners.
+                        if (name.startsWith(internalPackagePrefix)) {
+                            names.add(name.substring(0, name.length() - ".class".length()));
+                        }
+                    });
+        }
+        if (names.isEmpty()) {
+            throw new IOException("no compiled classes under " + internalPackagePrefix
+                    + "; run ./gradlew test");
+        }
+        return names;
+    }
+
+    private static Path compiledClassesDirectory() {
+        Path classes = Paths.get("build", "classes", "java", "main");
+        if (!Files.isDirectory(classes)) {
+            throw new IllegalStateException(
+                    "cannot find compiled classes at " + classes + "; run ./gradlew test");
+        }
+        return classes;
     }
 
     private static Path locate(String className) {
-        Path classes = Paths.get("build", "classes", "java", "main");
-        if (Files.isDirectory(classes)) {
-            return classes.resolve(className);
-        }
-        throw new IllegalStateException(
-                "cannot find the compiled adapter at " + classes + "; run ./gradlew test");
+        return compiledClassesDirectory().resolve(className + ".class");
     }
 
     /**
@@ -94,12 +195,27 @@ final class ConstantPool {
      * {@code update()V} to the linker -- and only the second distinction is fatal.
      * That gap is exactly how a wrong return type reaches a Robot Controller with
      * every test green.
-     *
-     * <p>A class file is header, constant pool, access/this/super/interfaces,
-     * {@code fields}, {@code methods}, {@code attributes}. Fields and methods
-     * have the same shape, so both tables are walked with one skipping loop.
      */
     static Set<String> declaredMethods(byte[] classFile) throws IOException {
+        return declaredMembers(classFile).methods;
+    }
+
+    /**
+     * Reads the {@code fields} table of a class file and returns every declared
+     * field as {@code name:descriptor}.
+     *
+     * <p>Fields matter for the same reason methods do. {@code OpModeInternal} is
+     * where the SDK declares {@code telemetry} and {@code hardwareMap}, and a stub
+     * that declared them on {@code OpMode} instead would compile and then throw
+     * {@code NoSuchFieldError} the first time an OpMode reported telemetry. For a
+     * long time nothing here checked fields at all.
+     */
+    static Set<String> declaredFields(byte[] classFile) throws IOException {
+        return declaredMembers(classFile).fields;
+    }
+
+    /** The declared fields and methods of a class, read in one pass over the class file. */
+    static Members declaredMembers(byte[] classFile) throws IOException {
         ConstantPool pool = new ConstantPool(classFile);
 
         int at = 10;
@@ -112,34 +228,55 @@ final class ConstantPool {
         at += 2;   // access_flags
         at += 2;   // this_class
         at += 2;   // super_class
-        int interfaces = pool.u2(pool.bytes, at);
+        int interfaces = ConstantPool.u2(pool.bytes, at);
         at += 2 + interfaces * 2;
 
-        int fieldCount = pool.u2(pool.bytes, at);
+        int fieldCount = ConstantPool.u2(pool.bytes, at);
         at += 2;
+        Set<String> fields = new LinkedHashSet<>();
         for (int i = 0; i < fieldCount; i++) {
+            fields.add(pool.utf8(ConstantPool.u2(pool.bytes, at + 2)) + ":"
+                    + pool.utf8(ConstantPool.u2(pool.bytes, at + 4)));
             at = skipMember(pool, at);
         }
 
-        int methodCount = pool.u2(pool.bytes, at);
+        int methodCount = ConstantPool.u2(pool.bytes, at);
         at += 2;
         Set<String> methods = new LinkedHashSet<>();
         for (int i = 0; i < methodCount; i++) {
             // access_flags(2) name(2) descriptor(2) attribute_count(2)
-            String name = pool.utf8(pool.u2(pool.bytes, at + 2));
-            String descriptor = pool.utf8(pool.u2(pool.bytes, at + 4));
-            methods.add(name + ":" + descriptor);
+            methods.add(pool.utf8(ConstantPool.u2(pool.bytes, at + 2)) + ":"
+                    + pool.utf8(ConstantPool.u2(pool.bytes, at + 4)));
             at = skipMember(pool, at);
         }
-        return methods;
+        return new Members(fields, methods);
+    }
+
+    /** Declared fields and methods of one class file. */
+    static final class Members {
+
+        final Set<String> fields;
+        final Set<String> methods;
+
+        Members(Set<String> fields, Set<String> methods) {
+            this.fields = fields;
+            this.methods = methods;
+        }
+
+        /** Every declared member as {@code name:descriptor}, methods and fields together. */
+        Set<String> all() {
+            Set<String> every = new LinkedHashSet<>(methods);
+            every.addAll(fields);
+            return every;
+        }
     }
 
     /** Skips one field_info or method_info, past its attributes. */
     private static int skipMember(ConstantPool pool, int at) {
-        int attributeCount = pool.u2(pool.bytes, at + 6);
+        int attributeCount = ConstantPool.u2(pool.bytes, at + 6);
         at += 8;
         for (int i = 0; i < attributeCount; i++) {
-            int length = pool.u4(pool.bytes, at + 2);
+            int length = ConstantPool.u4(pool.bytes, at + 2);
             at += 6 + length;
         }
         return at;

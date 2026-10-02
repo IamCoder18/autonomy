@@ -18,7 +18,7 @@ class HoldStateTest {
     private final List<String> events = new ArrayList<>();
 
     @Test
-    @DisplayName("holds on every loop and releases exactly once, when the state ends")
+    @DisplayName("applies the mechanism once on entry, and releases exactly once on the way out")
     void holdsThenReleases() {
         FakeClock clock = new FakeClock();
         HoldState hold = HoldState.forSeconds("Intake on", 0.5, on -> events.add(on ? "hold" : "release"), clock);
@@ -30,13 +30,40 @@ class HoldStateTest {
         machine.update();
         clock.advance(0.125);
         machine.update();
-        assertEquals(Arrays.asList("hold", "hold"), events);
+        assertEquals(Arrays.asList("hold"), events, "the mechanism is applied on entry, not per loop");
         assertFalse(machine.isFinished());
 
         clock.advance(0.25);
         machine.update();
-        assertEquals(Arrays.asList("hold", "hold", "hold", "release"), events);
+        assertEquals(Arrays.asList("hold", "release"), events);
         assertTrue(machine.isFinished());
+    }
+
+    @Test
+    @DisplayName("does not re-apply on every OpMode iteration")
+    void appliesTheMechanismOnceNotEveryLoop() {
+        // The OpMode loop runs at several hundred iterations a second. Re-applying the
+        // action each time meant several hundred redundant writes per second, and through a
+        // SafeDevice that is several hundred round trips to the hardware thread, for a
+        // mechanism whose output does not change while the state is active.
+        FakeClock clock = new FakeClock();
+        AtomicInteger applications = new AtomicInteger();
+        HoldState hold = HoldState.forSeconds("Intake on", 10,
+                on -> applications.incrementAndGet(), clock);
+
+        StateMachine machine = new StateMachine(Arrays.asList(hold), clock);
+        machine.start();
+
+        for (int i = 0; i < 200; i++) {
+            machine.update();
+        }
+
+        assertEquals(1, applications.get(),
+                "200 loop iterations must not mean 200 writes to the mechanism");
+        assertFalse(machine.isFinished(), "the hold is still within its 10 second window");
+
+        machine.stop();
+        assertEquals(2, applications.get(), "stopping releases, so two calls in total");
     }
 
     @Test
@@ -54,7 +81,8 @@ class HoldStateTest {
 
         machine.update();
         assertTrue(machine.isFinished());
-        assertEquals(Arrays.asList("hold", "hold", "hold", "release"), events);
+        assertEquals(Arrays.asList("hold", "release"), events);
+        assertEquals(3, readings.get(), "the condition is still read after every loop");
     }
 
     @Test

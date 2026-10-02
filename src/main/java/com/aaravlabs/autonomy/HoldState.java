@@ -10,8 +10,14 @@ import java.util.function.LongSupplier;
  * it.
  *
  * <p>The action is a {@link Consumer} of {@code boolean} rather than a {@code Runnable} so that
- * releasing the mechanism belongs to the state: it receives {@code true} while active and {@code
- * false} once the state ends, so it can never leave a motor spinning after the routine moves on.
+ * releasing the mechanism belongs to the state: it receives {@code true} once on entry and
+ * {@code false} once on the way out, so it can never leave a motor spinning after the routine
+ * moves on.
+ *
+ * <p>Applied <em>once</em>, on entry, rather than on every {@code loop()}. The OpMode loop can
+ * run at several hundred iterations a second, so re-applying would mean several hundred redundant
+ * writes a second -- and, through a {@code SafeDevice}, several hundred round trips to the
+ * hardware thread -- for a mechanism whose state does not change while the state is active.
  *
  * <pre>{@code
  * HoldState.forSeconds("Run intake", 1.0, on -> intake.run(m -> m.setPower(on ? 1.0 : 0.0)));
@@ -19,8 +25,6 @@ import java.util.function.LongSupplier;
  * }</pre>
  */
 public final class HoldState extends AbstractState {
-
-    private static final long NANOS_PER_SECOND = 1_000_000_000L;
 
     private final String name;
     private final Consumer<Boolean> action;
@@ -38,8 +42,8 @@ public final class HoldState extends AbstractState {
             throw new IllegalArgumentException(
                     "HoldState needs exactly one of seconds or condition");
         }
-        if (seconds != null && seconds < 0) {
-            throw new IllegalArgumentException("seconds must be >= 0, was " + seconds);
+        if (seconds != null) {
+            Timing.requireFiniteNonNegative(seconds);
         }
         this.name = Objects.requireNonNull(name, "name");
         this.action = Objects.requireNonNull(action, "action");
@@ -70,10 +74,23 @@ public final class HoldState extends AbstractState {
                 Objects.requireNonNull(condition, "condition"), System::nanoTime);
     }
 
-    /** As {@link #forSeconds}, with an explicit clock so tests are deterministic. Package private. */
-    static HoldState forSeconds(String name, double seconds, Consumer<Boolean> action,
+    /**
+     * As {@link #forSeconds}, with an explicit clock, so a test outside this package can make
+     * timings deterministic. The other factories measure against {@link System#nanoTime()}.
+     */
+    public static HoldState forSeconds(String name, double seconds, Consumer<Boolean> action,
             LongSupplier nanoTime) {
         return new HoldState(name, action, seconds, null, nanoTime);
+    }
+
+    /**
+     * As {@link #until}, with an explicit clock, so a test outside this package can make timings
+     * deterministic.
+     */
+    public static HoldState until(String name, BooleanSupplier condition,
+            Consumer<Boolean> action, LongSupplier nanoTime) {
+        return new HoldState(name, action, null,
+                Objects.requireNonNull(condition, "condition"), nanoTime);
     }
 
     @Override
@@ -81,14 +98,15 @@ public final class HoldState extends AbstractState {
         if (condition != null) {
             setEndCondition(condition);
         } else {
-            endNanos = nanoTime.getAsLong() + (long) (seconds * NANOS_PER_SECOND);
+            endNanos = Timing.deadline(nanoTime.getAsLong(), seconds);
             setEndCondition(() -> nanoTime.getAsLong() >= endNanos);
         }
+        action.accept(Boolean.TRUE);
     }
 
     @Override
     public void loop() {
-        action.accept(Boolean.TRUE);
+        // The mechanism was applied on entry and is released by stop(); nothing to do here.
     }
 
     @Override

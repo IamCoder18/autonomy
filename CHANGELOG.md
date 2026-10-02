@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A finished autonomous never ended its OpMode.** `StateMachineOpMode` ran the
+  route, reported telemetry, and stopped — it never asked the Robot Controller to
+  end the OpMode. The SDK drives an OpMode as `while (!stopRequested) { loop();
+  sleep(1); }` and reaches `stop()` only once something raises that flag, so an
+  auto that ran out of states kept looping until the Robot Controller force-killed
+  it at the match timer. On the Driver Station: the OpMode stays RUNNING with
+  telemetry frozen on `Auto: DONE`. Hardware was already released by the last
+  state's `stop()`, which is exactly why it was easy to miss — the robot looks
+  idle and correct and the auto simply never finishes.
+
+  `onSafeLoop()` now calls `requestOpModeStop()` once the route is exhausted, and
+  falls out of the SDK's loop into a normal `stop()` rather than taking the
+  force-stop path `terminateOpModeNow()` uses. Covered by
+  `StateMachineOpModeEndsItselfTest` for the control flow and by
+  `SdkReferenceTest` for the descriptor.
+
+- **`@Autonomous`'s and `@TeleOp`'s compile-time stubs did not match the SDK.**
+  `Autonomous.preselectTeleOp()` was declared `int` where the SDK declares
+  `String`, and both stubs carried three members lifted from `LinearOp` that the
+  real annotations do not declare. Nothing shipped was affected — Autonomy does
+  not use these annotations and the stub is `compileOnly` — but `@TeleOp` is what
+  a team writes first, so this was one compiler error away from a published
+  `NoSuchMethodError`. Transcribed from the AAR.
+
+- **`HardwareMap.get(String)` was stubbed as returning `Object`** where the SDK
+  declares `HardwareDevice` — another descriptor mismatch of the 0.1.2 kind.
+  Added a minimal `HardwareDevice` stub, deliberately memberless so it can never
+  be more permissive than the real interface.
+
+- **A state that never set an end condition was skipped silently.** It runs once
+  on the documented run-once default and the route moves on, which is deliberate,
+  but it is the same shape as the "state got skipped" bug this library exists to
+  design out. `AbstractState.isEndConditionDefaulted()` exposes it and
+  `StateMachineOpMode` reports it as a `State problem` telemetry line, recorded
+  before `update()` (the state is already gone afterwards) and kept for the rest
+  of the run.
+
+- **`WaitState` and `HoldState` accepted `NaN` and infinite durations.**
+  `seconds < 0` does not catch `NaN`, because every comparison against it is
+  false; a `NaN` duration then converted to zero nanoseconds and the wait
+  silently vanished. `Double.POSITIVE_INFINITY` overflowed the deadline to a value
+  in the past, so the state ended on its first iteration. Both are rejected now,
+  and deadline arithmetic saturates instead of wrapping.
+
+### Changed
+
+- **`HoldState` applies its action once, on entry**, rather than on every
+  `loop()`. The OpMode loop runs at several hundred iterations a second, so this
+  was several hundred redundant writes per second — and, through a `SafeDevice`,
+  several hundred round trips to the hardware thread — for a mechanism whose
+  output does not change while the state is active. `stop()` still releases
+  exactly once, so the documented `true`-then-`false` contract is unchanged.
+
+- **`FtcStubFidelityTest` now checks every stub class, and fields as well as
+  methods.** It previously covered the three classes the adapter happens to
+  reference, which is checking only the part someone already looked at; the two
+  stub bugs above were sitting in the classes it skipped. It also no longer
+  assumes a working directory, receiving both jars as absolute system properties
+  from `build.gradle`.
+
+- **`SdkReferenceTest` verifies references against the real AAR**, not only
+  against its own allowlist, and its scan is now descriptor-aware. The old scan
+  filtered on the reference's *owner*, which silently dropped the one SDK field
+  the adapter reads (`telemetry`) and would have dropped `requestOpModeStop()`
+  too, since javac emits the qualifying type as the owner and the method's
+  descriptor is `()V`. The allowlist's three `OpMode.init/loop/stop` entries were
+  also exempted from the dead-entry check and could never fail; the adapter
+  overrides Synapse's hooks rather than the SDK's lifecycle methods, so those
+  entries have been removed.
+
+- **`StateMachine`'s clock constructor and `WaitState`/`HoldState`'s are now
+  consistently public**, so a team's tests outside the package can inject a clock
+  for deterministic timings.
+
+### Added
+
+- `TimingTest`, covering duration validation, the `NaN` and infinity cases, and
+  saturation of an overflowing deadline.
+
+
 ## [0.1.3] - 2026-09-30
 
 ### Fixed
