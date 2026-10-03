@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`String.join` threw `NoSuchMethodError` on an API 24/25 Robot Controller.**
+  `StateMachineOpMode` used it to join the names on the `State problem` telemetry
+  line. `String.join` is Android API 26 and the FTC SDK declares
+  `minSdkVersion=24`, so the line that exists to explain a state which forgot
+  its end condition was itself the thing that crashed — and only on that path,
+  so it could not show up in an ordinary run. Now built with a `StringBuilder`.
+
+  The guard missed it, and in a way worth recording. `NoAndroidApiLeakTest` bans
+  API 26 types by scanning the constant pool, and its own comment recorded that
+  `String.join` is API 26 — but the ban list held `java/util/StringJoiner`, which
+  is only ever referenced by `String.join`'s *own body*. Calling it emits a
+  `Methodref` to `java/lang/String`, an owner every `toString()` in the library
+  already references, and the name `join` sits in the pool as its own UTF8 entry
+  with nothing tying it to that owner. So the scan could not have caught it: the
+  owner is always present, and searching for the bare name would match anything.
+
+  There is now a method-reference scan that parses the constant pool and
+  resolves owner and name together, plus a test for the scan itself built on
+  hand-assembled class files — because a guard that reports nothing for any input
+  is not a guard, and this one had a two-slot alignment path (Long and Double
+  claim two pool indexes) that no real class in the library happens to exercise.
+
+  While making that guard trustworthy, two more ways for it to report a clean
+  library without reading anything turned up, both of which affected the
+  pre-existing type scan as well:
+
+  - The scans matched slash-separated package prefixes against
+    `Path.relativize` output, which uses the platform separator. On Windows
+    every class was skipped and `NoAndroidApiLeakTest` reported no leaks — a
+    false all-clear, not a failure. Names are now normalised to `/`.
+  - A scan that matched no class returned an empty list, identical to a clean
+    result, so a renamed package or a moved build directory would quietly turn
+    a guard into a rubber stamp. All three scans now throw when they match
+    nothing, which is the check `PackageBoundaryTest` already made for its
+    class listing.
+
+  Both are test-only and change nothing at runtime.
+
 ### Added
 
 - **States nest to any depth.** `Submachine` holds a list of states and runs them

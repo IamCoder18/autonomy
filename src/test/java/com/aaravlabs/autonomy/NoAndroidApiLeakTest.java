@@ -46,6 +46,25 @@ class NoAndroidApiLeakTest {
             "java/util/StringJoiner",
     };
 
+    /**
+     * Methods that need API 26 and cannot be caught by a type scan.
+     *
+     * <p>{@code String.join} was shipped in {@code StateMachineOpMode}, called on the telemetry
+     * line that reports a state which forgot its end condition -- so on an API 24/25 Robot
+     * Controller the library threw {@code NoSuchMethodError} at the exact moment it was trying to
+     * explain a problem. It was invisible to the scan above for a reason worth recording: calling
+     * it emits a {@code Methodref} to {@code java/lang/String}, an owner every {@code toString()}
+     * in the library already references, and the name {@code join} sits in the pool as its own
+     * entry with nothing to tie it to that owner. Banning {@code java/util/StringJoiner} cannot
+     * help either, because that class is only ever referenced by {@code String.join}'s own body.
+     *
+     * <p>Hence a method-reference scan, which resolves owner and name together. See
+     * {@link CompiledClasses#findMethodReferences}.
+     */
+    private static final String[] API_26_METHODS = {
+            "java/lang/String#join",
+    };
+
     @Test
     @DisplayName("references no JDK type that needs Android API 26")
     void referencesNoApi26OnlyTypes() throws IOException {
@@ -58,6 +77,20 @@ class NoAndroidApiLeakTest {
                     + " declares minSdkVersion=24. On an API 24/25 Robot Controller this throws"
                     + " NoClassDefFoundError the first time the state runs. Time the state with"
                     + " System.nanoTime() and arithmetic instead. Offending references:\n  "
+                    + String.join("\n  ", leaks));
+        }
+    }
+
+    @Test
+    @DisplayName("calls no JDK method that needs Android API 26")
+    void referencesNoApi26OnlyMethods() throws IOException {
+        List<String> leaks = CompiledClasses.findMethodReferences(CORE, API_26_METHODS);
+
+        if (!leaks.isEmpty()) {
+            fail("the state framework calls methods that need Android API 26, but the FTC SDK"
+                    + " declares minSdkVersion=24. On an API 24/25 Robot Controller this throws"
+                    + " NoSuchMethodError the first time that code path runs. Build the string"
+                    + " with a StringBuilder instead. Offending references:\n  "
                     + String.join("\n  ", leaks));
         }
     }

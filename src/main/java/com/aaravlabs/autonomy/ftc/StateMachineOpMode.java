@@ -226,10 +226,30 @@ public abstract class StateMachineOpMode extends SafeOpMode {
             // because it is over almost immediately.
             telemetry.addData("State problem",
                     "%s: no end condition, ran one loop",
-                    String.join(", ", statesMissingAnEndCondition));
+                    joinNames(statesMissingAnEndCondition));
         }
         telemetry.addData("Auto time", "%.2f s", machine.elapsedSeconds());
         telemetry.update();
+    }
+
+    /**
+     * Joins names with commas.
+     *
+     * <p>Built by hand because {@code String.join} is Android API 26 and the FTC SDK declares
+     * {@code minSdkVersion=24}. Calling it here threw {@code NoSuchMethodError} on an API 24/25
+     * Robot Controller -- at exactly the moment a state forgot its end condition, which is the
+     * one moment this line exists to report. {@code NoAndroidApiLeakTest} now fails on the
+     * reference; see {@code API_26_METHODS} there.
+     */
+    private static String joinNames(List<String> names) {
+        StringBuilder joined = new StringBuilder();
+        for (int i = 0; i < names.size(); i++) {
+            if (i > 0) {
+                joined.append(", ");
+            }
+            joined.append(names.get(i));
+        }
+        return joined.toString();
     }
 
     /**
