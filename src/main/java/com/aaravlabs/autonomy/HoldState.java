@@ -38,9 +38,13 @@ public final class HoldState extends AbstractState {
      * False until the first {@link #loop()}, which is when the deadline is armed and the
      * mechanism is applied.
      *
-     * <p>{@code init()} runs while the Driver Station still shows INIT, and the driver may sit
-     * there for an unbounded time before pressing START. Anything anchored in {@code init()} is
-     * therefore measured against a period in which the OpMode is not actually running.
+     * <p>{@code init()} can run before the OpMode is actually running: a Driver Station that sits
+     * in INIT for an unbounded time is the obvious case, and a route entered before START is
+     * another. Anything anchored in {@code init()} is therefore measured against a period in
+     * which the robot is not doing the work yet. {@code StateMachineOpMode} now enters its route
+     * on START, which closes the first case -- but nothing inside a {@link State} can know how
+     * its machine is being driven, so the first {@code loop()} is the one moment guaranteed to
+     * follow START either way.
      */
     private boolean running = false;
 
@@ -119,11 +123,12 @@ public final class HoldState extends AbstractState {
     public void loop() {
         // Applied on the first loop(), once only.
         //
-        // Not in init(): that runs while the Driver Station shows INIT, before the driver has
-        // pressed START, so the intake would be spinning on the bench and before the match is
-        // live -- at best surprising, at worst the reason a robot grabs a wall. Synapse's
-        // SafeOpMode offers no post-start hook, and the first loop() is the first iteration the
-        // Robot Controller runs with the OpMode started.
+        // Not in init(): that can run before the OpMode is live -- the Driver Station sitting in
+        // INIT, before the driver has pressed START -- so the intake would be spinning on the
+        // bench and before the match is live, at best surprising and at worst the reason a robot
+        // grabs a wall. Synapse's SafeOpMode does offer onSafeStart(), but this class is in the
+        // framework package and cannot see it; StateMachineOpMode enters its route there, and the
+        // first loop() is the first moment guaranteed to follow START for any driver.
         //
         // Once only, because loop() runs at several hundred iterations a second and the output
         // cannot change while this state is active.
