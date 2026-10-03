@@ -21,8 +21,6 @@ import java.util.function.LongSupplier;
  */
 public final class StateMachine {
 
-    private static final long NANOS_PER_SECOND = 1_000_000_000L;
-
     private final List<State> states;
     private final LongSupplier nanoTime;
 
@@ -197,6 +195,6 @@ public final class StateMachine {
     }
 
     private static double toSeconds(long nanos) {
-        return nanos / (double) NANOS_PER_SECOND;
+        return nanos / (double) Timing.NANOS_PER_SECOND;
     }
 }

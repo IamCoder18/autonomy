@@ -9,13 +9,21 @@ import java.util.function.LongSupplier;
  */
 public final class WaitState extends AbstractState {
 
-    private static final long NANOS_PER_SECOND = 1_000_000_000L;
-
     private final String name;
     private final double seconds;
     private final LongSupplier nanoTime;
 
     private long endNanos;
+
+    /**
+     * False until the first {@link #loop()}, which is when the deadline is armed.
+     *
+     * <p>{@code init()} runs while the Driver Station shows INIT and the driver may sit there
+     * for an unbounded time before pressing START. A settle delay anchored there is measured
+     * against a period in which the OpMode is not running, so a 0.75 s settle can be entirely
+     * consumed before the robot moves -- which defeats the point of a settle delay.
+     */
+    private boolean running = false;
 
     /** Creates a wait of {@code seconds}, reported to the Driver Station as "Wait". */
     public WaitState(double seconds) {
@@ -31,11 +39,12 @@ public final class WaitState extends AbstractState {
         this(name, seconds, System::nanoTime);
     }
 
-    /** Creates a wait with an explicit clock, so tests are deterministic. Package private. */
-    WaitState(String name, double seconds, LongSupplier nanoTime) {
-        if (seconds < 0) {
-            throw new IllegalArgumentException("seconds must be >= 0, was " + seconds);
-        }
+    /**
+     * Creates a wait with an explicit clock, so a test outside this package can make timings
+     * deterministic. The other constructors measure against {@link System#nanoTime()}.
+     */
+    public WaitState(String name, double seconds, LongSupplier nanoTime) {
+        Timing.requireFiniteNonNegative(seconds);
         this.name = Objects.requireNonNull(name, "name");
         this.seconds = seconds;
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
@@ -43,13 +52,19 @@ public final class WaitState extends AbstractState {
 
     @Override
     public void init() {
-        endNanos = nanoTime.getAsLong() + (long) (seconds * NANOS_PER_SECOND);
-        setEndCondition(() -> nanoTime.getAsLong() >= endNanos);
+        running = false;
+        setEndCondition(() -> running && nanoTime.getAsLong() >= endNanos);
     }
 
     @Override
     public void loop() {
-        // Nothing to do: this state ends on time alone.
+        // Nothing to do beyond arming the deadline: this state ends on time alone. The wait is
+        // measured from here rather than from init(), so time spent waiting for the driver to
+        // press START does not eat into it.
+        if (!running) {
+            running = true;
+            endNanos = Timing.deadline(nanoTime.getAsLong(), seconds);
+        }
     }
 
     @Override

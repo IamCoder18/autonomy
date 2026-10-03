@@ -19,11 +19,21 @@ package com.qualcomm.robotcore.eventloop.opmode;
  * {@code telemetry} and {@code hardwareMap}. Do not "simplify" by moving those
  * fields here; see the comment on {@code OpModeInternal}.
  *
- * <p>Only the members Autonomy's adapter actually touches are declared.
- * {@code terminateOpModeNow()}, {@code updateTelemetry(Telemetry)}, and the rest
- * of the real surface are omitted -- they are inherited or unused, and omitting
- * an unused method cannot change a call site that does not exist. Omitting a
- * method that <em>is</em> used, or declaring one with the wrong signature, can.
+ * <p>Only the members Autonomy's adapter actually touches are declared, plus
+ * {@link OpModeInternal#requestOpModeStop()} -- the one inherited member the
+ * adapter calls to end a finished routine. {@code terminateOpModeNow()},
+ * {@code updateTelemetry(Telemetry)}, and the rest of the real surface are
+ * omitted because nothing calls them.
+ *
+ * <p><strong>An earlier version of this comment argued that omitting an unused
+ * method "cannot change a call site that does not exist", and that was used to
+ * justify leaving out {@code requestOpModeStop}.</strong> The reasoning is sound
+ * per member and wrong in aggregate: the omission is invisible precisely because
+ * the call site is also absent, so the stub and the adapter quietly agreed on a
+ * StateMachine that runs to the end of its route and then keeps looping forever.
+ * The stub is only faithful for members someone has thought about, which is why
+ * {@code FtcStubFidelityTest} now checks every stub class in this package against
+ * the real AAR rather than the three the adapter happens to reference.
  */
 public abstract class OpMode extends OpModeInternal {
 

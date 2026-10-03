@@ -31,4 +31,25 @@ abstract class OpModeInternal {
     public volatile Gamepad gamepad2;
     public Telemetry telemetry;
     public volatile HardwareMap hardwareMap;
+
+    /**
+     * Asks the Robot Controller to end this OpMode: the next iteration of
+     * {@code internalRunOpMode} sees the flag and falls out of its loop into
+     * {@code OpMode.stop()}.
+     *
+     * <p><strong>Declared here, on the package-private superclass, exactly as the
+     * real SDK declares it.</strong> Autonomy calls this to end a routine that has
+     * run out of states, and it is the graceful way to do it -- unlike
+     * {@code OpMode.terminateOpModeNow()}, which throws
+     * {@code OpModeManagerImpl.ForceStopException} and takes the force-stop path
+     * instead.
+     *
+     * <p>A subclass in another package can call it even though this class is not
+     * public: the member is inherited by the public {@link OpMode}, and both javac
+     * and the JVM resolve an inherited public member through the accessible
+     * subclass. {@code SdkReferenceTest} pins the resulting reference.
+     */
+    public final void requestOpModeStop() {
+        throw new UnsupportedOperationException("stub");
+    }
 }

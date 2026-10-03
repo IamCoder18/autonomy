@@ -133,8 +133,11 @@ def extractRealFtcSdk = tasks.register('extractRealFtcSdk', Copy) {
 
 tasks.named('test') {
     dependsOn extractRealFtcSdk
+    dependsOn ftcStubJar
     systemProperty 'autonomy.realFtcSdk',
             layout.buildDirectory.file('real-ftc-sdk/classes.jar').get().asFile.absolutePath
+    systemProperty 'autonomy.ftcStubJar',
+            ftcStubJar.get().archiveFile.get().asFile.absolutePath
     systemProperty 'autonomy.ftcSdkVersion', ftcSdkVersion.toString()
 }
 
