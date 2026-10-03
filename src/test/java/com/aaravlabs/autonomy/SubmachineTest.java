@@ -187,6 +187,74 @@ class SubmachineTest {
             assertEquals(Arrays.asList("group.init", "child.init", "group.loop", "child.loop", "child.stop", "group.stop"), log);
             assertTrue(machine.isFinished());
         }
+
+        @Test
+        @DisplayName("a group whose condition is already true leaves after one child, not all of them")
+        void anAlreadyTrueGroupDoesNotRunEveryChild() {
+            StateMachine machine = new StateMachine(new RecordingSubmachine("group", log,
+                    () -> true,
+                    Arrays.asList(
+                            RecordingState.lasting("first", log, 1),
+                            RecordingState.lasting("second", log, 1),
+                            RecordingState.lasting("third", log, 1))));
+
+            machine.start();
+            runToCompletion(machine);
+
+            // Running the first child is the floor, not the whole group: once that child is done
+            // the group is done, so it must not start the second.
+            assertEquals(Arrays.asList(
+                    "group.init", "first.init",
+                    "group.loop", "first.loop", "first.stop", "group.stop"), log);
+            assertFalse(log.contains("second.init"), "a group must not run its way through every child");
+            assertTrue(machine.isFinished());
+        }
+
+        @Test
+        @DisplayName("a group leaves rather than starting another child once its condition is true")
+        void aGroupDoesNotStartAnotherChildOnceItsConditionIsTrue() {
+            AtomicBoolean reachedGoal = new AtomicBoolean();
+            StateMachine machine = new StateMachine(new RecordingSubmachine("group", log,
+                    reachedGoal::get,
+                    Arrays.asList(
+                            RecordingState.lasting("first", log, 1),
+                            RecordingState.lasting("second", log, 1))));
+
+            machine.start();
+
+            // "first" ends on this very update, and the goal lands in the same iteration. The
+            // group has to be honoured here rather than after "second" has been entered.
+            reachedGoal.set(true);
+            machine.update();
+
+            assertTrue(machine.isFinished());
+            assertFalse(log.contains("second.init"),
+                    "the group was finished the moment its child finished; it must not start another");
+            assertEquals(1, count(log, "first.stop"), "the child it was running is stopped exactly once");
+        }
+    }
+
+    @Test
+    @DisplayName("the constructor shapes shown in the docs compile and run")
+    void theDocumentedShapesCompile() {
+        // Guards the documentation rather than the runner. There is no varargs constructor that
+        // also takes the trailing exit condition, so the early-exit form has to put the children
+        // in a List -- which is exactly the sort of thing a README snippet gets wrong without a
+        // compiler in the loop.
+        List<State> route = Arrays.asList(
+                new Submachine("RightScissor", Arrays.asList(
+                        new Submachine("Drive", RecordingState.lasting("forward", log, 1)),
+                        new Submachine("Turn", RecordingState.lasting("away", log, 1))),
+                        () -> false),
+                RecordingState.lasting("Shoot", log, 1));
+
+        StateMachine machine = new StateMachine(route);
+        machine.start();
+        runToCompletion(machine);
+
+        assertEquals(2, machine.size(), "two entries at the top level");
+        assertEquals(3, machine.stepCount(), "three states inside them");
+        assertTrue(machine.isFinished());
     }
 
     @Nested

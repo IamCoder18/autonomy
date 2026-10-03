@@ -14,9 +14,9 @@ import java.util.function.BooleanSupplier;
  * <pre>{@code
  * return Arrays.asList(
  *         new WaitState("Settle", 0.75),
- *         new Submachine("RightScissor",
+ *         new Submachine("RightScissor", Arrays.asList(
  *                 new Submachine("Drive", forward(), strafe()),
- *                 new Submachine("Turn", turnAway()),
+ *                 new Submachine("Turn", turnAway())),
  *                 () -> seeGoal()),
  *         HoldState.until("Shoot", shooter::isShootComplete, on -> shooter.setRunning(on)));
  * }</pre>

@@ -16,15 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top level, so structuring a route never costs latency.
 
   ```java
-  new Submachine("RightScissor",
+  new Submachine("RightScissor", Arrays.asList(
           new Submachine("Drive", forward(), strafe()),
-          new Submachine("Turn",  turnAway()),
-          () -> seeGoal());
+          new Submachine("Turn",  turnAway())));
   ```
 
-  A trailing condition leaves the group early — "do this phase until we see the
-  goal" — and stops the state the group was running first, so nothing is left
-  held. Subclassing overrides `init()`/`stop()` for entry and exit work.
+  A third constructor takes a trailing condition, which leaves the group early —
+  "do this phase until we see the goal" — and stops the state the group was
+  running first, so nothing is left held. Subclassing overrides `init()`/`stop()`
+  for entry and exit work.
 
   `State` is deliberately unchanged: a group *is* a state, recognised by the
   runner, so a team that implements `State` directly is unaffected and nothing

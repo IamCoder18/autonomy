@@ -130,10 +130,9 @@ build them:
 ```java
 return Arrays.asList(
         new WaitState("Settle", 0.75),
-        new Submachine("RightScissor",
+        new Submachine("RightScissor", Arrays.asList(
                 new Submachine("Drive", forward(), strafe()),
-                new Submachine("Turn",  turnAway()),
-                () -> seeGoal()),
+                new Submachine("Turn",  turnAway())),
         HoldState.until("Shoot", shooter::isShootComplete, on -> shooter.setRunning(on)));
 ```
 
@@ -144,12 +143,12 @@ top level, so structure never buys latency.
 `State` itself is unchanged — a group *is* a state, recognised by the runner, so
 a team that implements `State` directly is unaffected.
 
-The trailing condition in the example leaves the group early, which is how you
-write "do this phase until we see the goal". The state the group was running is
-stopped first, so nothing is left held:
+A third constructor takes a trailing condition, which leaves the group early —
+this is how you write "do this phase until we see the goal". The state the group
+was running is stopped first, so nothing is left held:
 
 ```java
-new Submachine("Align", turnToward(), hold, () -> aligned());
+new Submachine("Align", Arrays.asList(turnToward(), hold), () -> aligned());
 ```
 
 Override `init()` and `stop()` on a subclass to do work on entry and exit — raise

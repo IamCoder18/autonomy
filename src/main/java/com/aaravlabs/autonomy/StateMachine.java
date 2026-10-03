@@ -291,15 +291,25 @@ public final class StateMachine {
         State leaf = currentState();
         leaf.loop();
 
-        if (isDone(leaf)) {
+        boolean leafDone = isDone(leaf);
+        if (leafDone) {
             leaf.stop();
-            advance();
+        }
+
+        // Checked whether or not the leaf finished. Skipping this on the way past a finished
+        // leaf is what would let a group whose condition is already true run every one of its
+        // children: the moment its current child is done it has to leave, not start the next.
+        int exiting = deepestExitingGroup();
+        if (exiting >= 0) {
+            if (!leafDone) {
+                leaf.stop();
+            }
+            leaveGroup(exiting);
             return;
         }
 
-        int exiting = deepestExitingGroup();
-        if (exiting >= 0) {
-            leaveGroup(exiting);
+        if (leafDone) {
+            advance();
         }
     }
 
@@ -319,14 +329,17 @@ public final class StateMachine {
     }
 
     /**
-     * Leaves the group at {@code level} early: stops the state running inside it and every group
-     * below it, innermost first, then moves the enclosing group on.
+     * Leaves the group at {@code level} early: stops every group from the innermost down to and
+     * including it, then moves the enclosing group on.
+     *
+     * <p>The state running inside it has already been stopped by {@link #tick()}, which is the
+     * only caller; doing it again here would run a state's {@code stop()} twice, and for a
+     * {@code HoldState} that means releasing a mechanism it no longer holds.
      *
      * <p>The enclosing frame's index still points at the group being left, which is what lets
      * {@link #advance()} take the same path it takes when a child simply ran out.
      */
     private void leaveGroup(int level) {
-        currentState().stop();
         for (int l = stack.size() - 1; l >= level; l--) {
             stack.remove(l).owner.stop();
         }
@@ -383,14 +396,20 @@ public final class StateMachine {
         while (true) {
             Frame parent = stack.get(level);
             State next = parent.children.get(parent.index);
-            next.init();
-            if (!(next instanceof Submachine)) {
-                stateStartNanos = nanoTime.getAsLong();
-                return;
+
+            if (next instanceof Submachine) {
+                next.init();
+                Submachine group = (Submachine) next;
+                stack.add(new Frame(group, group.children(), parent.leafOffsets[parent.index]));
+                level = stack.size() - 1;
+                continue;
             }
-            Submachine group = (Submachine) next;
-            stack.add(new Frame(group, group.children(), parent.leafOffsets[parent.index]));
-            level = stack.size() - 1;
+
+            // Stamped before init(), as a flat route has always done, so time a state spends
+            // being set up is still reported as time spent in that state.
+            stateStartNanos = nanoTime.getAsLong();
+            next.init();
+            return;
         }
     }
 
