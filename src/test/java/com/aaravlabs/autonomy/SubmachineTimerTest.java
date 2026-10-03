@@ -34,11 +34,8 @@ class SubmachineTimerTest {
     /** A group that starts its own timer on entry and leaves when it runs out. */
     private class TimedSubmachine extends Submachine {
 
-        private final LongSupplier nanoTime;
-
         TimedSubmachine(String id, LongSupplier nanoTime, State... children) {
-            super(id, nanoTime, children);
-            this.nanoTime = nanoTime;
+            super(id, nanoTime, children);      // the timer reads the test's clock
         }
 
         @Override
@@ -204,6 +201,49 @@ class SubmachineTimerTest {
             assertTrue(machine.isFinished(),
                     "the condition the group was constructed with must still end it, or adding a "
                             + "timeout to a phase that leaves on sight would throw that away");
+        }
+
+        @Test
+        @DisplayName("does not carry one entry's conditions into the next entry of the same group")
+        void doesNotLeakConditionsBetweenEntries() {
+            // A group instance can legitimately appear more than once in a route -- nothing stops a
+            // team reusing one, and children() is immutable -- so init() may run more than once on
+            // the same object. A condition added by the first entry must not still be live during
+            // the second: the route would cut short, for a reason belonging to a previous entry.
+            FakeClock clock = new FakeClock();
+            boolean[] gate = new boolean[2];
+            int[] entries = new int[1];
+            Submachine shared = new Submachine("Shared",
+                    Arrays.asList(new WaitState("a", 0.0, clock), new WaitState("b", 0.0, clock)),
+                    NEVER, clock) {
+                @Override
+                public void init() {
+                    startTimer(30.0);
+                    int entry = entries[0]++;
+                    // Clamped rather than indexed: this test is about which conditions are live,
+                    // not how many times a group is entered, and running off the end of the array
+                    // would fail it for an unrelated reason.
+                    exitWhen(() -> entry < gate.length && gate[entry]);
+                }
+            };
+            StateMachine machine = new StateMachine(Arrays.asList(shared, shared), clock);
+
+            machine.start();
+            // Step until the first entry is over and the second has begun, which is the only moment
+            // this test is about: a condition set now must not affect the entry already under way.
+            while (entries[0] < 2 && !machine.isFinished()) {
+                machine.update();
+            }
+            assertEquals(2, entries[0], "both entries should have begun");
+
+            // True only now, after the first entry ended. If it were still registered, it would end
+            // the second entry immediately.
+            gate[0] = true;
+            machine.update();
+
+            assertFalse(machine.isFinished(),
+                    "the second entry ended because of a condition registered during the first; a "
+                            + "reused group must start each entry from the conditions it was built with");
         }
 
         @Test

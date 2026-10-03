@@ -87,7 +87,16 @@ public class Submachine implements State {
     private final List<State> children;
 
     /**
-     * Replaced by {@link #exitWhen(BooleanSupplier)} if a subclass adds a way out, hence not final.
+     * The condition this group was constructed with, and the one {@link #exitWhen} adds to.
+     *
+     * <p>Immutable for the life of the group, and the reason {@link #exitCondition} can be reset to
+     * it on every entry rather than being widened for good.
+     */
+    private final BooleanSupplier baseExitCondition;
+
+    /**
+     * {@link #baseExitCondition}, plus whatever {@link #exitWhen} has added since the current entry
+     * began. Hence not final.
      *
      * <p>The runner holds no reference to the original condition, and reads this one every
      * iteration, so widening it mid-run takes effect on the very next tick.
@@ -170,6 +179,7 @@ public class Submachine implements State {
             LongSupplier nanoTime) {
         this.name = Objects.requireNonNull(name, "name");
         this.exitCondition = Objects.requireNonNull(exitCondition, "exitCondition");
+        this.baseExitCondition = this.exitCondition;
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         Objects.requireNonNull(children, "children");
 
@@ -285,6 +295,10 @@ public class Submachine implements State {
      * are still checked -- the existing one first -- so a group that could already leave still does
      * so first.
      *
+     * <p>Conditions added this way belong to the entry they were added in. A group instance can
+     * appear more than once in a route, and the runner restores the constructed condition before
+     * each entry, so a condition left true by an earlier entry cannot end a later one.
+     *
      * <p>This is what makes a group's own timer able to end the group, which is the whole use for a
      * phase with a deadline:
      *
@@ -311,6 +325,26 @@ public class Submachine implements State {
         // lambda itself and recurse until the stack ran out.
         BooleanSupplier existing = exitCondition;
         exitCondition = () -> existing.getAsBoolean() || condition.getAsBoolean();
+    }
+
+    /**
+     * Drops any conditions added by {@link #exitWhen} since the last entry, restoring the one this
+     * group was constructed with.
+     *
+     * <p>Called by the runner immediately before {@link #init()}, so a group entered a second time
+     * starts from the same conditions as a group entered the first. Only the runner can know an
+     * entry is beginning, and it must happen before {@code init()} because that is where a subclass
+     * adds its conditions.
+     *
+     * <p>Without this, conditions accumulate across entries: the same group instance can appear
+     * more than once in a route, since nothing stops a team reusing it, and the second entry would
+     * carry the first entry's conditions as well as its own. A condition that was true last time
+     * the group ran would then end this entry early, for a reason that belonged to a previous one.
+     * Nothing about that is visible -- the route simply cuts short -- so it is restored rather than
+     * left to accumulate.
+     */
+    final void prepareForEntry() {
+        exitCondition = baseExitCondition;
     }
 
     /**

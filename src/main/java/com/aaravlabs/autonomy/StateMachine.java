@@ -398,8 +398,11 @@ public final class StateMachine {
             State next = parent.children.get(parent.index);
 
             if (next instanceof Submachine) {
-                next.init();
                 Submachine group = (Submachine) next;
+                // Before init(), since that is where a subclass adds conditions to leave by, and
+                // this group may have been entered before.
+                group.prepareForEntry();
+                next.init();
                 stack.add(new Frame(group, group.children(), parent.leafOffsets[parent.index]));
                 level = stack.size() - 1;
                 continue;

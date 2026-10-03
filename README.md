@@ -257,7 +257,9 @@ public class Climb extends Submachine {
 `exitWhen` adds a way out alongside the one the group was built with rather than
 replacing it, so a phase that already leaves when it sees a goal keeps that. The
 step that is running when the group leaves is stopped first, so a mechanism it was
-holding is still released.
+holding is still released. Conditions belong to the entry that added them, so
+reusing one group instance twice in a route does not carry the first entry's
+conditions into the second.
 
 ## Installation
 

@@ -25,7 +25,7 @@ import java.util.function.LongSupplier;
  *     public void init() {
  *         shooter.run();
  *         startTimer(0.2);                       // give up after 0.2 s
- *         setEndCondition(() -> timer().hasElapsed() || shooter::isShootComplete);
+ *         setEndCondition(() -> timer().hasElapsed() || shooter.isShootComplete());
  *     }
  *
  *     @Override

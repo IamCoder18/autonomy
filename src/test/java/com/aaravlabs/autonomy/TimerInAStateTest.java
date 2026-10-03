@@ -27,14 +27,12 @@ class TimerInAStateTest {
     /** A state that times itself, and can be given something to time. */
     private static class TimingState extends AbstractState {
 
-        private final LongSupplier nanoTime;
         private final List<String> log;
         private final String label;
 
         TimingState(String label, LongSupplier nanoTime, List<String> log) {
-            super(nanoTime);
+            super(nanoTime);                   // the timer reads the test's clock, not the real one
             this.label = label;
-            this.nanoTime = nanoTime;
             this.log = log;
         }
 

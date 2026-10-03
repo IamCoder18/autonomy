@@ -60,7 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The new condition is OR-ed with the existing one, both are still checked, and
   the step running when the group leaves is stopped first — so a phase bounded by a
-  clock cannot leave a mechanism on.
+  clock cannot leave a mechanism on. Conditions belong to the entry that added
+  them: the runner restores the constructed condition before each entry, so
+  reusing one group instance in a route cannot let an earlier entry's condition
+  end a later one.
 
 - **States nest to any depth.** `Submachine` holds a list of states and runs them
   in order; groups go inside groups, as deep as a route is built. A group ends
