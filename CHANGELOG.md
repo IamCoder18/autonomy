@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **States nest to any depth.** `Submachine` holds a list of states and runs them
+  in order; groups go inside groups, as deep as a route is built. A group ends
+  when its last child ends, and entering or leaving one is a single transition —
+  a state three groups deep is retired in the same one `update()` as one at the
+  top level, so structuring a route never costs latency.
+
+  ```java
+  new Submachine("RightScissor",
+          new Submachine("Drive", forward(), strafe()),
+          new Submachine("Turn",  turnAway()),
+          () -> seeGoal());
+  ```
+
+  A trailing condition leaves the group early — "do this phase until we see the
+  goal" — and stops the state the group was running first, so nothing is left
+  held. Subclassing overrides `init()`/`stop()` for entry and exit work.
+
+  `State` is deliberately unchanged: a group *is* a state, recognised by the
+  runner, so a team that implements `State` directly is unaffected and nothing
+  source-breaks. `Submachine` implements `State` rather than extending
+  `AbstractState`, because both of `AbstractState`'s defaults are wrong for a
+  group — its run-once fallback would end every group after one iteration, and
+  `isEndConditionDefaulted()` would report every group to the Driver Station as a
+  state that forgot its end condition.
+
+  `StateMachine` gained `stepCount()` / `currentStepIndex()` (every step, however
+  nested, beside the existing top-level `size()` / `currentIndex()`), plus
+  `depth()` and `path()`. `StateMachineOpMode` shows the step and the enclosing
+  phase as extra telemetry lines. Aborting a nested route now runs `stop()` on
+  every group it was inside, innermost first, so a group that raised a mast on
+  entry lowers it on the way out.
+
 ### Fixed
 
 - **A finished autonomous never ended its OpMode.** `StateMachineOpMode` ran the

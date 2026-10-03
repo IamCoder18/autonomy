@@ -154,7 +154,11 @@ public abstract class StateMachineOpMode extends SafeOpMode {
             telemetry.addData("Auto", "DONE");
         } else {
             telemetry.addData("Auto", "%d/%d", machine.currentIndex() + 1, machine.size());
+            telemetry.addData("Step", "%d/%d", machine.currentStepIndex() + 1, machine.stepCount());
             telemetry.addData("State", current.name());
+            if (machine.depth() > 1) {
+                telemetry.addData("Phase", phaseLabel(machine));
+            }
             telemetry.addData("State time", "%.2f s", machine.currentStateElapsedSeconds());
         }
         if (!statesMissingAnEndCondition.isEmpty()) {
@@ -166,5 +170,24 @@ public abstract class StateMachineOpMode extends SafeOpMode {
         }
         telemetry.addData("Auto time", "%.2f s", machine.elapsedSeconds());
         telemetry.update();
+    }
+
+    /**
+     * The groups enclosing the running state, outermost first: "RightScissor > Drive".
+     *
+     * <p>Assembled with a {@link StringBuilder} rather than {@code String.join}, which is Android
+     * API 26 and the FTC SDK declares {@code minSdkVersion=24}. See {@code NoAndroidApiLeakTest}.
+     */
+    private String phaseLabel(StateMachine machine) {
+        List<State> path = machine.path();
+        StringBuilder label = new StringBuilder();
+        // The last element of the path is the running state itself, already on its own line.
+        for (int i = 0; i < path.size() - 1; i++) {
+            if (label.length() > 0) {
+                label.append(" > ");
+            }
+            label.append(path.get(i).name());
+        }
+        return label.toString();
     }
 }

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import com.aaravlabs.autonomy.AbstractState;
 import com.aaravlabs.autonomy.State;
+import com.aaravlabs.autonomy.Submachine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -143,6 +144,56 @@ class StateMachineOpModeEndsItselfTest {
                 "well-behaved states must not produce a warning: " + opMode.telemetryLines());
         assertTrue(opMode.telemetryLines().stream().anyMatch(line -> line.contains("Auto=DONE")),
                 "the last line of a finished auto should say so: " + opMode.telemetryLines());
+    }
+
+    @Test
+    @DisplayName("stays quiet about groups, which have no end condition to forget")
+    void doesNotWarnAboutGroups() {
+        // This is the reason Submachine implements State rather than extending AbstractState.
+        // A group's end condition is "never leave early", not something a missing
+        // setEndCondition call could explain, so extending AbstractState would make every
+        // nested route report "no end condition, ran one loop" on the Driver Station -- a
+        // permanent false alarm on the most common state in a structured route. If someone
+        // refactors Submachine onto AbstractState, this test fails.
+        ProbeOpMode opMode = new ProbeOpMode(new Submachine("phase",
+                new OneLoopState("inner-a"), new OneLoopState("inner-b")));
+        opMode.runInit();
+
+        for (int i = 0; i < 4; i++) {
+            opMode.runLoop();
+        }
+
+        assertTrue(opMode.telemetryLines().stream().noneMatch(line -> line.contains("State problem")),
+                "a group must not be reported as a state that forgot its end condition: "
+                        + opMode.telemetryLines());
+        assertTrue(opMode.shouldEndTheOpMode(), "a nested route must still finish");
+    }
+
+    @Test
+    @DisplayName("shows the step, the phase it belongs to, and the top-level position")
+    void reportsNestedProgressOnTelemetry() {
+        // Three steps behind two groups. "Auto" counts top-level entries, so it reads 1/1 for
+        // the whole run -- useless for "how far through the auto are we", which is why "Step"
+        // exists alongside it.
+        ProbeOpMode opMode = new ProbeOpMode(new Submachine("phase",
+                new Submachine("inner", new OneLoopState("first"), new OneLoopState("second")),
+                new OneLoopState("third")));
+        opMode.runInit();
+
+        // One update retires "first" and moves to "second", still two groups deep.
+        opMode.runLoop();
+
+        List<String> lines = opMode.telemetryLines();
+        assertTrue(lines.contains("Auto=1/1"), "the route has one top-level entry: " + lines);
+        assertTrue(lines.contains("Step=2/3"), "the second of three steps: " + lines);
+        assertTrue(lines.contains("State=second"), "the leaf is what is running: " + lines);
+        assertTrue(lines.contains("Phase=phase > inner"), "and which phase it is in: " + lines);
+
+        for (int i = 0; i < 4; i++) {
+            opMode.runLoop();
+        }
+        assertTrue(opMode.telemetryLines().contains("Auto=DONE"),
+                "a nested route ends the same way a flat one does: " + opMode.telemetryLines());
     }
 
     @Test
