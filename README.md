@@ -121,6 +121,39 @@ than reaching for a hardware map. That is what keeps them testable off the
 robot, and it is why the framework itself has no robot imports at all — a rule
 enforced by `PackageBoundaryTest`.
 
+## Grouping states
+
+A flat route stops being readable somewhere around a dozen steps. `Submachine`
+holds a list of states and runs them in order, and groups nest as deeply as you
+build them:
+
+```java
+return Arrays.asList(
+        new WaitState("Settle", 0.75),
+        new Submachine("RightScissor", Arrays.asList(
+                new Submachine("Drive", forward(), strafe()),
+                new Submachine("Turn",  turnAway())),
+        HoldState.until("Shoot", shooter::isShootComplete, on -> shooter.setRunning(on)));
+```
+
+A group ends when its last child ends, and **nesting costs no extra iterations**:
+a state three groups deep is retired in the same single `update()` as one at the
+top level, so structure never buys latency.
+
+`State` itself is unchanged — a group *is* a state, recognised by the runner, so
+a team that implements `State` directly is unaffected.
+
+A third constructor takes a trailing condition, which leaves the group early —
+this is how you write "do this phase until we see the goal". The state the group
+was running is stopped first, so nothing is left held:
+
+```java
+new Submachine("Align", Arrays.asList(turnToward(), hold), () -> aligned());
+```
+
+Override `init()` and `stop()` on a subclass to do work on entry and exit — raise
+a mast on the way in, lower it on the way out.
+
 ## Built-in states
 
 Two cover most routes:
@@ -130,6 +163,7 @@ Two cover most routes:
 | `WaitState` | a fixed number of seconds has passed | settle delays, readable gaps in a route |
 | `HoldState.forSeconds(name, secs, action)` | the time is up | run a mechanism for a known duration |
 | `HoldState.until(name, condition, action)` | the condition is true | run until a sensor, colour, or limit says stop |
+| `Submachine(name, states...)` | its last child ends | naming a phase, and nesting a route |
 
 `HoldState`'s action is a `Consumer<Boolean>`, not a `Runnable`, and that is the
 point: it receives `true` while active and `false` on the way out, so releasing
@@ -214,6 +248,7 @@ own, and only the `ftc` subpackage does.
 | `StateMachine` | `com.aaravlabs.autonomy` | Runs a fixed list of states, one OpMode iteration at a time. |
 | `WaitState` | `com.aaravlabs.autonomy` | Waits N seconds. |
 | `HoldState` | `com.aaravlabs.autonomy` | Holds a mechanism for a time or until a condition, then releases it. |
+| `Submachine` | `com.aaravlabs.autonomy` | A state made of other states: a named phase, nestable to any depth. |
 | `StateMachineOpMode` | `com.aaravlabs.autonomy.ftc` | `OpMode` base class. Subclass it and return a route from `buildStates()`. |
 
 ### `StateMachine`
@@ -222,8 +257,10 @@ own, and only the `ftc` subpackage does.
 | --- | --- |
 | `start()` | Enters the first state. Call once, from `init()`. |
 | `update()` | Advances one OpMode iteration. Call once per `loop()`. |
-| `stop()` | Ends early, running the active state's `stop()`. |
-| `currentState()` / `currentIndex()` | What is running, for telemetry. |
+| `stop()` | Ends early, running the active state's `stop()` and that of every group it is inside. |
+| `currentState()` / `currentIndex()` | What is running, for telemetry. `currentIndex()` counts top-level entries. |
+| `stepCount()` / `currentStepIndex()` | The same question counting every step however deeply nested: "step 5 of 12". |
+| `depth()` / `path()` | How deep the running step is, and which groups enclose it. |
 | `elapsedSeconds()` / `currentStateElapsedSeconds()` | Timing, for tuning a route. |
 | `isFinished()` | True once the route is exhausted. `StateMachineOpMode` reads this to end the OpMode. |
 
@@ -258,8 +295,8 @@ signal to push the hardware access behind an interface you can fake.
 
 ## Testing & development
 
-65 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
-behaviour, misuse, argument validation, the Android API-level floor, the
+86 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
+behaviour, nesting, misuse, argument validation, the Android API-level floor, the
 package boundary, the link to Synapse, and the exact SDK members the compiled
 adapter references.
 

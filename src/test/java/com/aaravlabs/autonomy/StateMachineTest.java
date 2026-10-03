@@ -188,6 +188,31 @@ class StateMachineTest {
         assertEquals(Collections.singletonList("forgetful.loop"), log);
     }
 
+    @Test
+    @DisplayName("counts time a state spends in init() as time spent in that state")
+    void timeSpentInInitCountsTowardsTheState() {
+        // init() runs while the Driver Station still shows INIT, so a state can genuinely spend
+        // time there. The timer has always started before it, and under-reporting that time
+        // would make a slow state look faster than it is.
+        FakeClock clock = new FakeClock();
+        State slowToStart = new AbstractState() {
+            @Override
+            public void init() {
+                clock.advance(0.25);
+            }
+
+            @Override
+            public void loop() {
+            }
+        };
+
+        StateMachine machine = new StateMachine(Arrays.asList(slowToStart), clock);
+        machine.start();
+
+        assertEquals(0.25, machine.currentStateElapsedSeconds(), 1e-6,
+                "the state timer starts before init(), not after it");
+    }
+
     @Nested
     @DisplayName("aborting")
     class Aborting {
