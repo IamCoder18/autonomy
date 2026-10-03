@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 /**
  * A {@link State} made of other states: a named phase of a route, holding the steps that make
@@ -84,10 +85,22 @@ public class Submachine implements State {
 
     private final String name;
     private final List<State> children;
-    private final BooleanSupplier exitCondition;
+
+    /**
+     * Replaced by {@link #exitWhen(BooleanSupplier)} if a subclass adds a way out, hence not final.
+     *
+     * <p>The runner holds no reference to the original condition, and reads this one every
+     * iteration, so widening it mid-run takes effect on the very next tick.
+     */
+    private BooleanSupplier exitCondition;
 
     /** How many non-group states this group holds, directly or nested. Precomputed for telemetry. */
     private final int steps;
+
+    /** The clock this group's timer measures against. */
+    private final LongSupplier nanoTime;
+
+    private final LazyTimer timers = new LazyTimer();
 
     /**
      * Creates a group that runs {@code children} in order.
@@ -97,6 +110,19 @@ public class Submachine implements State {
      */
     public Submachine(String name, State... children) {
         this(name, Arrays.asList(Objects.requireNonNull(children, "children")));
+    }
+
+    /**
+     * Creates a group that runs {@code children} in order, measuring its timer against an explicit
+     * clock, so a test outside this package can make timings deterministic.
+     *
+     * <p>Only needed by tests. The other constructors measure against {@link System#nanoTime()}.
+     *
+     * @throws NullPointerException     if any argument is {@code null}
+     * @throws IllegalArgumentException if {@code children} is empty, or contains a {@code null}
+     */
+    public Submachine(String name, LongSupplier nanoTime, State... children) {
+        this(name, Arrays.asList(Objects.requireNonNull(children, "children")), NEVER, nanoTime);
     }
 
     /**
@@ -130,8 +156,21 @@ public class Submachine implements State {
      * @throws IllegalArgumentException if {@code children} is empty, or contains a {@code null}
      */
     public Submachine(String name, List<State> children, BooleanSupplier exitCondition) {
+        this(name, children, exitCondition, System::nanoTime);
+    }
+
+    /**
+     * Creates a group that runs {@code children} in order, can be left early, and measures its
+     * timer against an explicit clock.
+     *
+     * @throws NullPointerException     if any argument is {@code null}
+     * @throws IllegalArgumentException if {@code children} is empty, or contains a {@code null}
+     */
+    public Submachine(String name, List<State> children, BooleanSupplier exitCondition,
+            LongSupplier nanoTime) {
         this.name = Objects.requireNonNull(name, "name");
         this.exitCondition = Objects.requireNonNull(exitCondition, "exitCondition");
+        this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         Objects.requireNonNull(children, "children");
 
         List<State> copy = new ArrayList<>(children.size());
@@ -176,6 +215,113 @@ public class Submachine implements State {
     @Override
     public final String name() {
         return name;
+    }
+
+    /**
+     * This group's {@link Timer}, named after this group.
+     *
+     * <p>Built on first call and reused after. It does not run until started, so a group that is
+     * constructed while the Driver Station still shows INIT does not spend that time.
+     *
+     * <p>Useful for reporting how long a phase took, which is a question about the group and not
+     * about any one of its children:
+     *
+     * <pre>{@code
+     * public class Climb extends Submachine {
+     *     public Climb(State... steps) { super("Climb", steps); }
+     *
+     *     @Override public void init() { startTimer(); }
+     *     @Override public void loop() { telemetry.addLine(timer().toString()); }
+     * }
+     * }</pre>
+     *
+     * @see #startTimer()
+     * @see #startTimer(double)
+     * @see #exitWhen(BooleanSupplier)
+     */
+    protected final Timer timer() {
+        return timers.get(nanoTime, name);
+    }
+
+    /**
+     * Starts this group's timer over, with no timeout: it counts up and never expires.
+     *
+     * <p>Call from {@link #init()}, which the runner invokes when it enters the group -- for a
+     * top-level group, the moment {@code start()} is called.
+     */
+    protected final void startTimer() {
+        timers.start(nanoTime, name);
+    }
+
+    /**
+     * Starts this group's timer over, expiring after {@code seconds}.
+     *
+     * <p>Call from {@link #init()}, then hand {@link Timer#hasElapsed()} to {@link #exitWhen} so the
+     * deadline actually ends the group:
+     *
+     * <pre>{@code
+     * @Override
+     * public void init() {
+     *     startTimer(8.0);
+     *     exitWhen(timer()::hasElapsed);
+     * }
+     * }</pre>
+     *
+     * <p>The duration is stated once, here, and the check refers back to it.
+     *
+     * @param seconds how long before {@link Timer#hasElapsed()} returns {@code true}
+     * @throws IllegalArgumentException if {@code seconds} is negative, NaN, or infinite
+     */
+    protected final void startTimer(double seconds) {
+        timers.start(nanoTime, name, seconds);
+    }
+
+    /**
+     * Adds a way to leave this group early, alongside the one it was constructed with. Call from
+     * {@link #init()}.
+     *
+     * <p>The new condition is OR-ed with the existing one rather than replacing it, so adding a
+     * timeout to a group that already leaves when it sees a goal does not throw that away. Both
+     * are still checked -- the existing one first -- so a group that could already leave still does
+     * so first.
+     *
+     * <p>This is what makes a group's own timer able to end the group, which is the whole use for a
+     * phase with a deadline:
+     *
+     * <pre>{@code
+     * public class Climb extends Submachine {
+     *     public Climb(State... steps) { super("Climb", steps); }
+     *
+     *     @Override public void init() {
+     *         startTimer(8.0);            // the match is nearly over; take whatever we have
+     *         exitWhen(timer()::hasElapsed);
+     *     }
+     * }
+     * }</pre>
+     *
+     * <p>Leaving early stops the child that is running before the group itself stops, so a mechanism
+     * that child was holding is still released -- the same guarantee the constructor's exit
+     * condition gives.
+     *
+     * @throws NullPointerException if {@code condition} is {@code null}
+     */
+    protected final void exitWhen(BooleanSupplier condition) {
+        Objects.requireNonNull(condition, "condition");
+        // Captured into a local first: a lambda reading this.exitCondition would otherwise find the
+        // lambda itself and recurse until the stack ran out.
+        BooleanSupplier existing = exitCondition;
+        exitCondition = () -> existing.getAsBoolean() || condition.getAsBoolean();
+    }
+
+    /**
+     * Stops this group's timer, so it reports no further time.
+     *
+     * <p>Optional, since a group is no longer reachable once it has been left. Call it when a group
+     * exits by some path other than {@link State#stop()}, so nothing keeps reading a stale elapsed
+     * time.
+     */
+    protected final void stopTimer() {
+        timers.stop();
     }
 
     /**

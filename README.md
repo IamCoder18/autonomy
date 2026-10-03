@@ -192,6 +192,73 @@ HoldState.forSeconds("Run intake", 1.0, on -> intake.run(m -> m.setPower(on ? 1.
 HoldState.until("Shoot", shooter::isShootComplete, on -> shooter.setRunning(on));
 ```
 
+## Timing
+
+`Timer` is a stopwatch and a timeout in one object. States and groups each
+carry one, reached via `timer()`.
+
+```java
+public class ShootState extends AbstractState {
+    @Override
+    public void init() {
+        shooter.run();
+        startTimer(0.2);                        // give up after 0.2 s
+        setEndCondition(() -> timer().hasElapsed() || shooter.isShootComplete());
+    }
+
+    @Override public void loop() {}
+
+    @Override public void stop() { shooter.stop(); }
+}
+```
+
+The duration is given once, to `startTimer(...)`, and `hasElapsed()` refers back
+to it. That is the point: writing the number at the check site instead is how a
+timeout ends up checking something other than what it was written for.
+
+| Method | Notes |
+| --- | --- |
+| `start()` | Start over, counting up, never expiring. |
+| `start(seconds)` | Start over, expiring after `seconds`. |
+| `hasElapsed()` | Whether that duration is up. `false` forever if started with `start()`. |
+| `hasElapsed(seconds)` | A one-off check against a number given only here. |
+| `elapsedSeconds()` / `elapsedNanos()` | How long it has run. `0` if it is not running. |
+| `remainingSeconds()` | Time left before the timeout. Never negative. |
+| `targetSeconds()` | The duration it will expire after, or `-1` if it has none. |
+| `stop()` | Stop, discarding elapsed time and disarming the timeout. |
+| `toString()` | `"Climb: 1.25 s of 3.00 s"`, for telemetry and logs. |
+
+**When it starts.** A timer does not run until started, and it should be started
+from `init()`. That is not a formality: a route is built by `buildStates()` while
+the Driver Station shows INIT, and the driver may sit there for an unbounded time
+before pressing START — so a timer that began at construction would spend that
+time before the robot moved, and a 0.2 s shoot timeout could be entirely gone
+before the state was ever entered. Started in `init()`, it measures the time the
+state is actually running: for the first state of a route that is the moment
+`start()` is called, and for a later state it is the iteration that enters it.
+
+### Timing a phase
+
+A group is the case the stopwatch is really for — "how long did this phase take"
+is a question about a group, and its children only know about their own step.
+`exitWhen` is how a timeout ends a phase:
+
+```java
+public class Climb extends Submachine {
+    public Climb(State... steps) { super("Climb", steps); }
+
+    @Override public void init() {
+        startTimer(8.0);                   // the match is nearly over; take what we have
+        exitWhen(timer()::hasElapsed);
+    }
+}
+```
+
+`exitWhen` adds a way out alongside the one the group was built with rather than
+replacing it, so a phase that already leaves when it sees a goal keeps that. The
+step that is running when the group leaves is stopped first, so a mechanism it was
+holding is still released.
+
 ## Installation
 
 Autonomy is published to **Maven Central**, which is the path you want. It
@@ -258,6 +325,7 @@ own, and only the `ftc` subpackage does.
 | `StateMachine` | `com.aaravlabs.autonomy` | Runs a fixed list of states, one OpMode iteration at a time. |
 | `WaitState` | `com.aaravlabs.autonomy` | Waits N seconds. |
 | `HoldState` | `com.aaravlabs.autonomy` | Holds a mechanism for a time or until a condition, then releases it. |
+| `Timer` | `com.aaravlabs.autonomy` | How long a state has been running, and whether it has been running too long. |
 | `Submachine` | `com.aaravlabs.autonomy` | A state made of other states: a named phase, nestable to any depth. |
 | `StateMachineOpMode` | `com.aaravlabs.autonomy.ftc` | `OpMode` base class. Subclass it and return a route from `buildStates()`. |
 

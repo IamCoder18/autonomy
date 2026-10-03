@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Timer`: how long a state has been running, and whether it has been running too
+  long.** One object answers both, and it does not run until it is started.
+
+  ```java
+  @Override
+  public void init() {
+      shooter.run();
+      startTimer(0.2);                      // give up after 0.2 s
+      setEndCondition(() -> timer().hasElapsed() || shooter.isShootComplete());
+  }
+  ```
+
+  The duration is given once, to `startTimer(...)`, and `hasElapsed()` refers back
+  to it — the alternative, writing the number again at the check site, is how a
+  timeout ends up checking something other than what it was written for. Also
+  available as a standalone `new Timer("Climb")`, with `elapsedSeconds()` for a
+  stopwatch, `remainingSeconds()` for a countdown, and a `toString()` of
+  `"Climb: 1.25 s of 3.00 s"` for telemetry.
+
+  Time is held as `long` nanoseconds and read as a difference of two clock
+  readings rather than against a precomputed deadline, so it stays correct when
+  `System.nanoTime()` wraps; the per-iteration check is one subtraction and one
+  comparison, with no allocation and no boxing.
+
+- **`AbstractState` and `Submachine` each carry a `Timer`**, reached via
+  `timer()`, so a state that wants one does not have to own a field for it. The
+  timer is built on first use, so the states that never ask for one -- which is
+  most of them -- do not allocate one.
+
+  Start it from `init()`, and it measures the time the state is actually running:
+  for the first state of a route that is the moment `start()` is called, and for a
+  later state it is the iteration that enters it. This matters because a route is
+  built by `buildStates()` while the Driver Station still shows INIT, and the
+  driver may sit there for an unbounded time before pressing START; a timer that
+  began at construction would spend that time, and a 0.2 s shoot timeout could be
+  entirely gone before its state was entered.
+
+- **`Submachine.exitWhen(condition)`** adds a way to leave a group early, in
+  addition to the one it was constructed with. A group could not previously end on
+  anything its own `init()` set, which left its timer able to report a phase's
+  duration but not bound it.
+
+  ```java
+  @Override public void init() {
+      startTimer(8.0);                     // the match is nearly over; take what we have
+      exitWhen(timer()::hasElapsed);
+  }
+  ```
+
+  The new condition is OR-ed with the existing one, both are still checked, and
+  the step running when the group leaves is stopped first — so a phase bounded by a
+  clock cannot leave a mechanism on.
+
 - **States nest to any depth.** `Submachine` holds a list of states and runs them
   in order; groups go inside groups, as deep as a route is built. A group ends
   when its last child ends, and entering or leaving one is a single transition —
@@ -122,6 +175,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and deadline arithmetic saturates instead of wrapping.
 
 ### Changed
+
+- **`WaitState`'s javadoc no longer claims `init()` runs while the Driver Station
+  shows INIT.** That was true when `WaitState` armed its deadline on the first
+  `loop()`, and stopped being true when `StateMachineOpMode` began entering its
+  route on START. Behaviour is unchanged; the stated reason was not, and leaving it
+  would have sent the next reader looking for a hazard that is no longer there. The
+  deadline is still armed on the first `loop()`, because a `State` is driven by a
+  bare `StateMachine` just as often and cannot see what its OpMode is doing.
 
 - **`StateMachineOpMode` enters its route on START, not on INIT.** The route is
   still built during INIT, so Synapse's hardware map is available to
