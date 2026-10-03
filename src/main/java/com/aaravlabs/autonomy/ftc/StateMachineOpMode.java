@@ -15,6 +15,15 @@ import java.util.List;
  * ending the OpMode once the route is exhausted, and reporting progress to the Driver Station --
  * happens here.
  *
+ * <p>The lifecycle hooks {@link #onSafeInit()}, {@link #onSafeStart()} and {@link #onSafeStop()}
+ * are {@code final}, because overriding one without calling {@code super} silently breaks the
+ * route. To hook the OpMode's lifecycle, use {@link #onRouteInited()} or {@link #onRouteStarted()};
+ * to add per-iteration work, override {@link #onSafeLoop()} and call {@code super}.
+ *
+ * <p>The route is built during INIT and entered when START is pressed, so a state's
+ * {@link State#init()} runs with the OpMode live rather than while the Driver Station still shows
+ * INIT.
+ *
  * <p>Build a fresh machine per run by constructing the states in {@code buildStates()}; do not
  * cache states in fields, because they carry whatever they accumulated on the previous run.
  *
@@ -45,12 +54,70 @@ public abstract class StateMachineOpMode extends SafeOpMode {
      */
     protected abstract List<State> buildStates();
 
+    /**
+     * {@code final}: overriding this without calling {@code super} leaves {@code machine} null and
+     * the OpMode dies of an NPE on its first loop, after START, where a team is least able to
+     * diagnose it. {@link #onRouteInited()} is the supported place to add init-phase work.
+     */
     @Override
-    protected void onSafeInit() {
+    protected final void onSafeInit() {
         machine = new StateMachine(buildStates());
-        machine.start();
+        onRouteInited();
     }
 
+    /**
+     * Enters the first state, on START rather than on INIT.
+     *
+     * <p>Starting here is what keeps a state's {@code init()} from running while the Driver
+     * Station still shows INIT, where the driver may sit for an unbounded time before pressing
+     * START: anything a state anchors in {@code init()} would be measuring against a period in
+     * which the OpMode is not running at all.
+     */
+    @Override
+    protected final void onSafeStart() {
+        machine.start();
+        onRouteStarted();
+    }
+
+    /**
+     * {@code final} for the same reason as {@link #onSafeInit()}: the machine has to be stopped
+     * or the active state never releases its hardware.
+     */
+    @Override
+    protected final void onSafeStop() {
+        if (machine != null) {
+            machine.stop();
+        }
+    }
+
+    /**
+     * Runs once during the OpMode's INIT phase, after the route has been built.
+     *
+     * <p>Synapse's hardware map is ready by now, so this is where to look up devices. It runs
+     * <em>after</em> {@link #buildStates()} because a team cannot hand a state a value the state
+     * was already built without -- anything needed during construction has to be resolved inside
+     * {@code buildStates()} itself.
+     *
+     * <p>Does nothing by default. Note that no state has been entered yet, so
+     * {@link StateMachine#currentState()} is still {@code null}.
+     */
+    protected void onRouteInited() {}
+
+    /**
+     * Runs once when the driver presses START, after the first state has been entered.
+     *
+     * <p>After {@code machine.start()}, not before: a state is already initialised and active, so
+     * {@link StateMachine#currentState()} is meaningful here and any hardware it holds is already
+     * configured.
+     *
+     * <p>Does nothing by default.
+     */
+    protected void onRouteStarted() {}
+
+    /**
+     * Overridable on purpose: extra per-iteration work is a reasonable thing to want. Call
+     * {@code super.onSafeLoop()} to keep the route advancing and the Driver Station updated.
+     */
     @Override
     protected void onSafeLoop() {
         // Before the update, while the active state is still the current one.
@@ -61,13 +128,6 @@ public abstract class StateMachineOpMode extends SafeOpMode {
 
         if (shouldEndTheOpMode()) {
             endTheRoutine();
-        }
-    }
-
-    @Override
-    protected void onSafeStop() {
-        if (machine != null) {
-            machine.stop();
         }
     }
 

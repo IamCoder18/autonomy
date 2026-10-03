@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -48,9 +49,9 @@ class StateMachineOpModeLinkageTest {
     }
 
     @Test
-    @DisplayName("overrides all three Synapse lifecycle hooks it relies on")
+    @DisplayName("overrides every Synapse lifecycle hook it relies on")
     void overridesTheSafeLifecycleHooks() throws Exception {
-        for (String hook : List.of("onSafeInit", "onSafeLoop", "onSafeStop")) {
+        for (String hook : List.of("onSafeInit", "onSafeStart", "onSafeLoop", "onSafeStop")) {
             Method declared = findDeclared(StateMachineOpMode.class, hook);
 
             assertTrue(declared != null,
@@ -58,6 +59,56 @@ class StateMachineOpModeLinkageTest {
                             + " probably renamed it; the machine would silently stop advancing.");
             assertTrue(Modifier.isProtected(declared.getModifiers()),
                     hook + "() should stay protected, as it is in SafeOpMode");
+        }
+    }
+
+    @Test
+    @DisplayName("seals the lifecycle hooks it depends on, and leaves onSafeLoop open")
+    void sealsTheLifecycleHooks() throws Exception {
+        // Overriding any of these without calling super breaks the route silently rather than
+        // loudly: no machine, or an unstopped one, and the failure shows up on the Driver
+        // Station during a match rather than at compile time. onSafeLoop() is the deliberate
+        // exception -- extra per-iteration work is a reasonable thing for a team to want -- so
+        // both halves are asserted, because "seal everything" is as wrong a refactor as
+        // "seal nothing".
+        for (String hook : List.of("onSafeInit", "onSafeStart", "onSafeStop")) {
+            Method declared = findDeclared(StateMachineOpMode.class, hook);
+
+            assertTrue(declared != null, "StateMachineOpMode no longer overrides " + hook + "()");
+            assertTrue(Modifier.isFinal(declared.getModifiers()),
+                    hook + "() must stay final. A subclass that overrides it without calling"
+                            + " super breaks the route in a way that only fails on the robot.");
+        }
+
+        Method loop = findDeclared(StateMachineOpMode.class, "onSafeLoop");
+        assertTrue(loop != null, "StateMachineOpMode no longer overrides onSafeLoop()");
+        assertFalse(Modifier.isFinal(loop.getModifiers()),
+                "onSafeLoop() is meant to stay overridable for extra per-iteration work, with a"
+                        + " javadoc telling teams to call super. Making it final is a breaking"
+                        + " change for any team that does that.");
+    }
+
+    @Test
+    @DisplayName("offers route hooks, so a subclass can join the lifecycle without overriding it")
+    void offersRouteHooks() throws Exception {
+        // The reason the Synapse hooks can be final at all: a team that wants to react to INIT or
+        // START has somewhere to put that, rather than being pushed into overriding a method whose
+        // contract is "do not override this".
+        for (String hook : List.of("onRouteInited", "onRouteStarted")) {
+            Method declared = findDeclared(StateMachineOpMode.class, hook);
+
+            assertTrue(declared != null,
+                    hook + "() disappeared. Without it a team can only hook the lifecycle by"
+                            + " overriding a sealed onSafeInit()/onSafeStart().");
+            assertTrue(Modifier.isProtected(declared.getModifiers()),
+                    hook + "() should be protected, matching buildStates()");
+            assertEquals(void.class, declared.getReturnType(), hook + "() returns nothing");
+            assertEquals(0, declared.getParameterCount(),
+                    hook + "() must stay parameterless, like buildStates(): everything it needs is"
+                            + " already reachable from the OpMode");
+            assertFalse(Modifier.isAbstract(declared.getModifiers()),
+                    hook + "() must have a default no-op body. These are optional hooks, not"
+                            + " another thing a subclass is required to implement.");
         }
     }
 

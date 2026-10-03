@@ -47,11 +47,13 @@ class HoldStateTest {
     @Test
     @DisplayName("does not power the mechanism while the OpMode is still in INIT")
     void appliesNothingBeforeTheFirstLoop() {
-        // init() runs while the Driver Station shows INIT, before the driver has pressed START.
-        // Powering a mechanism there means it is already spinning on the bench and before the
-        // match is live, which is at best surprising and at worst the reason a robot grabs a
-        // wall. Synapse's SafeOpMode offers no post-start hook, so the first loop() is the
-        // first iteration the Robot Controller runs with the OpMode started.
+        // init() can run before the OpMode is live: the Driver Station sits in INIT until the
+        // driver presses START. Powering a mechanism there means it is already spinning on the
+        // bench and before the match is live, which is at best surprising and at worst the reason
+        // a robot grabs a wall. The first loop() is the first moment guaranteed to follow START.
+        // StateMachineOpMode now enters its route on START rather than INIT, which closes that
+        // gap for the OpMode adapter, but this State is driven by a bare StateMachine here so
+        // the guarantee has to hold on its own.
         FakeClock clock = new FakeClock();
         List<Boolean> calls = new ArrayList<>();
         HoldState hold = HoldState.forSeconds("Intake", 1, calls::add, clock);

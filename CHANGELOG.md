@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every group it was inside, innermost first, so a group that raised a mast on
   entry lowers it on the way out.
 
+- **`StateMachineOpMode` can be hooked at INIT and START without overriding the
+  Synapse lifecycle.** Two no-op hooks, `onRouteInited()` and `onRouteStarted()`,
+  both `protected` and parameterless like `buildStates()`: the first fires during
+  INIT after the route has been built, the second when START is pressed after the
+  first state has been entered, so `currentState()` is meaningful in it.
+
+  This is what makes sealing the lifecycle hooks possible, which see *Changed*.
+
 ### Fixed
 
 - **A finished autonomous never ended its OpMode.** `StateMachineOpMode` ran the
@@ -93,7 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Robot Controller runs with the OpMode started -- and still only once, which
   keeps the per-iteration write amplification away. `WaitState` arms its deadline
   there too. Both measure from when the OpMode actually runs, so time in INIT
-  costs nothing.
+  costs nothing. (A `State` cannot know when START was pressed — it is driven by a
+  bare `StateMachine` just as often — so this remains the right place for them even
+  now that `StateMachineOpMode` enters its route on START; see *Changed*.)
 
   `HoldState.until(...)` was already immune: its condition is the team's own, read
   after every loop, so it never depended on a clock. Its first loop() now applies
@@ -112,6 +122,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and deadline arithmetic saturates instead of wrapping.
 
 ### Changed
+
+- **`StateMachineOpMode` enters its route on START, not on INIT.** The route is
+  still built during INIT, so Synapse's hardware map is available to
+  `buildStates()`, but `machine.start()` now runs from `onSafeStart()`. A state's
+  `init()` therefore runs with the OpMode live, instead of while the Driver
+  Station still shows INIT and the driver may sit there indefinitely — which is
+  the same hazard `HoldState` and `WaitState` were working around by arming their
+  deadlines on the first `loop()`.
+
+  **Breaking for a team that previews or tunes a route** by watching states run
+  under a Driver Station Init state: nothing is entered until START is pressed. A
+  team already using `onSafeInit()` to add init-phase work must move that work to
+  `onRouteInited()`, or to `onSafeLoop()`, both of which are open.
+
+  The `HoldState` / `WaitState` first-`loop()` workaround is left in place on
+  purpose. Its original justification is now only half true, but a `State` cannot
+  see how its machine is being driven — it is just as correct under a bare
+  `StateMachine` — and simplifying it would shift when the mechanism is first
+  powered by an iteration, which wants testing on a robot rather than a diff.
+
+- **`StateMachineOpMode`'s Synapse lifecycle hooks are now `final`.**
+  `onSafeInit()`, `onSafeStart()` and `onSafeStop()` were overridable, and
+  overriding one without calling `super` broke the route silently: drop
+  `onSafeInit()` and `machine` stays null, so the OpMode dies of an NPE on its
+  first loop, after START, where a team is least able to diagnose it. This is now
+  a compile error, with `onRouteInited()` / `onRouteStarted()` as the supported
+  place to hook the lifecycle.
+
+  `onSafeLoop()` stays overridable deliberately — extra per-iteration work is a
+  reasonable thing to want — and its javadoc now says to call `super`.
 
 - **`HoldState` applies its action once, on entry**, rather than on every
   `loop()`. The OpMode loop runs at several hundred iterations a second, so this

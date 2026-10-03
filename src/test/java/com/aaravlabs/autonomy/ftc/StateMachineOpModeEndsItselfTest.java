@@ -17,6 +17,8 @@ import com.aaravlabs.autonomy.Submachine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -78,6 +80,7 @@ class StateMachineOpModeEndsItselfTest {
     void endsTheOpModeWhenTheRouteIsFinished() {
         ProbeOpMode opMode = new ProbeOpMode(new OneLoopState("only"));
         opMode.runInit();
+        opMode.runStart();
 
         assertFalse(opMode.shouldEndTheOpMode(), "nothing has run yet");
 
@@ -96,6 +99,7 @@ class StateMachineOpModeEndsItselfTest {
         ProbeOpMode opMode = new ProbeOpMode(
                 new OneLoopState("first"), new OneLoopState("second"), new OneLoopState("third"));
         opMode.runInit();
+        opMode.runStart();
 
         // Each of these states ends on its first loop, and the machine enters the next one in
         // the same update, so one iteration per state: three updates and it is done.
@@ -123,6 +127,7 @@ class StateMachineOpModeEndsItselfTest {
         // on the Driver Station rather than inferred from a route that finished early.
         ProbeOpMode opMode = new ProbeOpMode(new ForgetfulState());
         opMode.runInit();
+        opMode.runStart();
         opMode.runLoop();
 
         assertTrue(opMode.telemetryLines().stream().anyMatch(line -> line.contains("State problem")),
@@ -135,6 +140,7 @@ class StateMachineOpModeEndsItselfTest {
     void doesNotWarnAboutWellBehavedStates() {
         ProbeOpMode opMode = new ProbeOpMode(new OneLoopState("first"), new OneLoopState("second"));
         opMode.runInit();
+        opMode.runStart();
 
         for (int i = 0; i < 4; i++) {
             opMode.runLoop();
@@ -158,6 +164,7 @@ class StateMachineOpModeEndsItselfTest {
         ProbeOpMode opMode = new ProbeOpMode(new Submachine("phase",
                 new OneLoopState("inner-a"), new OneLoopState("inner-b")));
         opMode.runInit();
+        opMode.runStart();
 
         for (int i = 0; i < 4; i++) {
             opMode.runLoop();
@@ -179,6 +186,7 @@ class StateMachineOpModeEndsItselfTest {
                 new Submachine("inner", new OneLoopState("first"), new OneLoopState("second")),
                 new OneLoopState("third")));
         opMode.runInit();
+        opMode.runStart();
 
         // One update retires "first" and moves to "second", still two groups deep.
         opMode.runLoop();
@@ -207,6 +215,54 @@ class StateMachineOpModeEndsItselfTest {
         assertFalse(opMode.shouldEndTheOpMode());
     }
 
+    @Test
+    @DisplayName("builds the route on INIT but enters the first state only on START")
+    void entersTheRouteOnStartNotInit() {
+        // The reason start() moved out of onSafeInit(). A state whose init() ran during INIT
+        // would be measuring its timers against a period in which the OpMode is not running:
+        // the Driver Station can sit there indefinitely, so a 1-second hold could expire
+        // before the match does. Nothing inside a State can detect this, because a State is
+        // driven by a bare StateMachine too and has no idea what its OpMode is doing.
+        ProbeOpMode opMode = new ProbeOpMode(new OneLoopState("only"));
+        opMode.runInit();
+
+        assertNotNull(opMode.machine(),
+                "the route is built during INIT, so hardware from safeMap is already resolved");
+        assertNull(opMode.machine().currentState(),
+                "but no state is entered yet, so nothing has been initialised before START");
+        assertFalse(opMode.machine().isStarted());
+
+        opMode.runStart();
+
+        assertTrue(opMode.machine().isStarted());
+        assertEquals("only", opMode.machine().currentState().name(),
+                "START enters the first state, so its init() runs with the OpMode live");
+    }
+
+    @Test
+    @DisplayName("fires the route hooks once each, in order, after the work they follow")
+    void firesTheRouteHooksInOrder() {
+        // The ordering is the whole point of these hooks and is invisible in the diff, so it is
+        // pinned here: onRouteInited() fires after buildStates() has returned, and
+        // onRouteStarted() fires after machine.start(), which is what makes currentState()
+        // meaningful in it. Swapping them, or firing either before the work it follows, would
+        // compile and would break every team that uses them.
+        List<String> events = new ArrayList<>();
+        ProbeOpMode opMode = new ProbeOpMode(List.of(new OneLoopState("only")), events);
+
+        opMode.runInit();
+        assertEquals(List.of("inited"), events,
+                "onRouteInited() runs during INIT, once, and before any state is entered");
+
+        opMode.runStart();
+        assertEquals(List.of("inited", "started"), events,
+                "onRouteStarted() runs once, on START, and after the route has been entered");
+
+        opMode.runLoop();
+        assertEquals(List.of("inited", "started", "loop"), events,
+                "and neither fires again once the route is running");
+    }
+
     // ---- doubles ---------------------------------------------------------------
 
     /**
@@ -225,11 +281,19 @@ class StateMachineOpModeEndsItselfTest {
         final List<State> route;
         final RecordingTelemetry recorder = new RecordingTelemetry();
 
+        /** Lifecycle events, for the hook-ordering test. Empty unless one is passed in. */
+        final List<String> events;
+
         /** True once the adapter has reached its own {@code endTheRoutine()}. */
         boolean stopRequested;
 
         ProbeOpMode(State... route) {
-            this.route = Arrays.asList(route);
+            this(Arrays.asList(route), new ArrayList<>());
+        }
+
+        ProbeOpMode(List<State> route, List<String> events) {
+            this.route = route;
+            this.events = events;
             installTelemetry();
         }
 
@@ -261,6 +325,25 @@ class StateMachineOpModeEndsItselfTest {
             return route;
         }
 
+        @Override
+        protected void onRouteInited() {
+            events.add("inited");
+        }
+
+        @Override
+        protected void onRouteStarted() {
+            events.add("started");
+        }
+
+        @Override
+        protected void onSafeLoop() {
+            // Only reached while a state is running; once the route ends, runLoop() stops
+            // calling through. Recording here rather than around super.onSafeLoop() keeps the
+            // event from being logged for an iteration that never advanced the machine.
+            events.add("loop");
+            super.onSafeLoop();
+        }
+
         List<String> telemetryLines() {
             return recorder.lines;
         }
@@ -268,6 +351,16 @@ class StateMachineOpModeEndsItselfTest {
         /** Runs {@code onSafeInit()}, standing in for Synapse calling it from init(). */
         void runInit() {
             invoke("onSafeInit");
+        }
+
+        /**
+         * Runs {@code onSafeStart()}, standing in for Synapse calling it when START is pressed.
+         *
+         * <p>Separate from {@link #runInit()} because the adapter now builds the route in one and
+         * enters it in the other: until {@code runStart()} the machine has no current state.
+         */
+        void runStart() {
+            invoke("onSafeStart");
         }
 
         /**

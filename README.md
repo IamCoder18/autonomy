@@ -39,6 +39,13 @@ That is the whole OpMode. Running the sequence, releasing the intake when the
 routine is interrupted, ending the OpMode once the route is done, and printing
 progress to the Driver Station all happen in the base class.
 
+`buildStates()` runs during INIT, once Synapse's hardware map is ready. The route
+is *entered* when START is pressed, so a state's `init()` runs with the OpMode
+live. If you need to react to either moment, override `onRouteInited()` or
+`onRouteStarted()` — the base class seals its own lifecycle hooks, precisely so
+that adding your own work cannot come at the cost of the machine being started or
+stopped.
+
 ## Why Autonomy?
 
 FTC autonomous code has a specific problem: it is a fixed script, but it is
@@ -172,10 +179,13 @@ the mechanism is part of the state and cannot be forgotten.
 It is applied once, on the first `loop()` iteration, rather than on every one —
 the OpMode loop runs at several hundred iterations a second, and re-writing the
 same output that often is pure overhead. The clock starts there too, not at
-`init()`. `init()` runs while the Driver Station still shows INIT, and the driver
-can sit there for as long as they like before pressing START. Anchoring a hold
-in `init()` means the intake is already spinning before the match is live, and
-that a 0.2 s shoot can expire entirely while waiting for START.
+`init()`. `init()` can run before the OpMode is live, and anchoring a hold there
+means the intake is already spinning before the match is live, and that a 0.2 s
+shoot can expire entirely while the driver is still deciding. (`StateMachineOpMode`
+now enters its route on START rather than INIT, which closes that specific case for
+the OpMode adapter — but a `State` is driven by a bare `StateMachine` just as
+often, and cannot see what its OpMode is doing, so the first `loop()` is the right
+place regardless.)
 
 ```java
 HoldState.forSeconds("Run intake", 1.0, on -> intake.run(m -> m.setPower(on ? 1.0 : 0.0)));
@@ -255,7 +265,7 @@ own, and only the `ftc` subpackage does.
 
 | Method | Notes |
 | --- | --- |
-| `start()` | Enters the first state. Call once, from `init()`. |
+| `start()` | Enters the first state. Call once. |
 | `update()` | Advances one OpMode iteration. Call once per `loop()`. |
 | `stop()` | Ends early, running the active state's `stop()` and that of every group it is inside. |
 | `currentState()` / `currentIndex()` | What is running, for telemetry. `currentIndex()` counts top-level entries. |
@@ -321,7 +331,9 @@ be rejected:
   off the robot.
 - **`StateMachineOpModeLinkageTest`** — asserts the adapter still lines up with
   the Synapse release it compiles against, so a Synapse rename fails on a laptop
-  rather than as an `AbstractMethodError` on a competition day.
+  rather than as an `AbstractMethodError` on a competition day. Also pins the
+  lifecycle hooks as `final` and `onSafeLoop()` as *not* `final`: both are
+  deliberate, and both would compile either way.
 - **`FtcStubFidelityTest`** — the important one, and the reason the previous two
   releases shipped broken jars. Autonomy compiles its adapter against
   hand-written SDK stubs, because the real SDK ships only as AARs, and a stub
@@ -343,7 +355,9 @@ be rejected:
   the OpMode. The SDK drives an OpMode as `while (!stopRequested) { loop(); }`,
   so a routine that runs out of states without asking to stop keeps looping until
   the Robot Controller force-kills it at the match timer: hardware already
-  released, Driver Station still showing RUNNING.
+  released, Driver Station still showing RUNNING. Also that the route is entered on
+  START rather than INIT, and that the route hooks fire once each, in order,
+  after the work they follow — the ordering is invisible in a diff.
 
 ## Contributing
 
