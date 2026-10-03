@@ -136,6 +136,35 @@ class MethodReferenceScanTest {
     }
 
     @Test
+    @DisplayName("normalises Windows separators, which would otherwise skip every class")
+    void normalisesWindowsSeparators() {
+        // The scan matches slash-separated package prefixes against Path.relativize output, which
+        // is the platform's separator. On Windows every class is skipped, the scan finds nothing,
+        // and the guard reports a clean library having read nothing. Linux CI cannot produce that
+        // string from a real path, so the fix is applied to the string directly and pinned here.
+        assertEquals("com/aaravlabs/autonomy/StateMachine.class",
+                CompiledClasses.toInternalSeparators("com\\aaravlabs\\autonomy\\StateMachine.class"));
+
+        assertEquals("com/aaravlabs/autonomy/StateMachine.class",
+                CompiledClasses.toInternalSeparators("com/aaravlabs/autonomy/StateMachine.class"),
+                "already-normalised names must pass through unchanged");
+    }
+
+    @Test
+    @DisplayName("refuses to report a clean library when it matched no classes at all")
+    void refusesAnEmptyScan() {
+        // An empty result and a result from an empty search are the same list, so a scan that
+        // matched nothing would otherwise read as "no problems found". A renamed package or a
+        // moved build directory would turn a guard into a rubber stamp without ever saying so.
+        try {
+            CompiledClasses.findMethodReferences("com/aaravlabs/autonomy/no/such/package/", FORBIDDEN);
+            fail("a scan that matched no compiled class should fail loudly, not pass vacuously");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("vacuously"), expected.getMessage());
+        }
+    }
+
+    @Test
     @DisplayName("rejects a truncated class file rather than reporting nothing")
     void rejectsATruncatedClassFile() {
         byte[] truncated = new byte[] {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 55};

@@ -51,7 +51,7 @@ final class CompiledClasses {
             try (Stream<Path> walk = Files.walk(classes)) {
                 for (Path file : (Iterable<Path>) walk.filter(Files::isRegularFile)
                         .filter(p -> p.toString().endsWith(".class"))::iterator) {
-                    String name = classes.relativize(file).toString();
+                    String name = internalName(classes, file);
                     if (name.startsWith(packagePrefix)) {
                         names.add(name);
                     }
@@ -82,18 +82,22 @@ final class CompiledClasses {
         List<String> hits = new ArrayList<>();
 
         if (Files.isDirectory(classes)) {
+            int scanned = 0;
             try (Stream<Path> walk = Files.walk(classes)) {
                 for (Path file : (Iterable<Path>) walk.filter(Files::isRegularFile)
                         .filter(p -> p.toString().endsWith(".class"))::iterator) {
-                    String name = classes.relativize(file).toString();
+                    String name = internalName(classes, file);
                     if (name.startsWith(packagePrefix)) {
+                        scanned++;
                         collect(name, readAll(file), forbiddenPrefixes, hits);
                     }
                 }
             }
+            requireScanned(scanned, packagePrefix);
             return hits;
         }
 
+        int scanned = 0;
         try (ZipFile zip = new ZipFile(classes.toFile())) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
@@ -101,12 +105,53 @@ final class CompiledClasses {
                 if (!entry.getName().endsWith(".class") || !entry.getName().startsWith(packagePrefix)) {
                     continue;
                 }
+                scanned++;
                 try (InputStream in = zip.getInputStream(entry)) {
                     collect(entry.getName(), readAll(in), forbiddenPrefixes, hits);
                 }
             }
         }
+        requireScanned(scanned, packagePrefix);
         return hits;
+    }
+
+    /**
+     * A class file's name relative to {@code root}, in internal form with {@code /} separators.
+     */
+    private static String internalName(Path root, Path file) {
+        return toInternalSeparators(root.relativize(file).toString());
+    }
+
+    /**
+     * Replaces the platform separator with {@code /}.
+     *
+     * <p>Necessary because {@link Path#relativize} hands back the platform's separator: on Windows
+     * it yields {@code com\aaravlabs\autonomy\State.class}, which never matches the
+     * slash-separated prefixes these scans are called with. Every class would be skipped, the scan
+     * would find nothing, and the guard would report a clean library while having read nothing at
+     * all -- the exact failure this class of test exists to prevent, arrived at by another route.
+     *
+     * <p>Separate from {@link #internalName} so the fix is reachable from a test on Linux, where
+     * {@code relativize} never produces a backslash and the bug would otherwise be invisible until
+     * somebody ran the build on Windows.
+     */
+    static String toInternalSeparators(String path) {
+        return path.replace('\\', '/');
+    }
+
+    /**
+     * Fails the scan when it matched no class at all.
+     *
+     * <p>An empty result and a result from an empty search are the same list, and only one of them
+     * means anything. Without this, a renamed package, a moved build directory, or the separator
+     * problem above would all read as "no problems found". Throwing is the only way to tell them
+     * apart. {@code PackageBoundaryTest} asserts the same thing for the class listing.
+     */
+    private static void requireScanned(int scanned, String packagePrefix) throws IOException {
+        if (scanned == 0) {
+            throw new IOException("no compiled classes found under '" + packagePrefix
+                    + "'; the scan matched nothing and would pass vacuously");
+        }
     }
 
     private static void collect(String name, String constantPool, String[] prefixes, List<String> hits) {
@@ -138,18 +183,22 @@ final class CompiledClasses {
         List<String> hits = new ArrayList<>();
 
         if (Files.isDirectory(classes)) {
+            int scanned = 0;
             try (Stream<Path> walk = Files.walk(classes)) {
                 for (Path file : (Iterable<Path>) walk.filter(Files::isRegularFile)
                         .filter(p -> p.toString().endsWith(".class"))::iterator) {
-                    String name = classes.relativize(file).toString();
+                    String name = internalName(classes, file);
                     if (name.startsWith(packagePrefix)) {
+                        scanned++;
                         collectMethods(name, Files.readAllBytes(file), forbidden, hits);
                     }
                 }
             }
+            requireScanned(scanned, packagePrefix);
             return hits;
         }
 
+        int scanned = 0;
         try (ZipFile zip = new ZipFile(classes.toFile())) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
@@ -157,11 +206,13 @@ final class CompiledClasses {
                 if (!entry.getName().endsWith(".class") || !entry.getName().startsWith(packagePrefix)) {
                     continue;
                 }
+                scanned++;
                 try (InputStream in = zip.getInputStream(entry)) {
                     collectMethods(entry.getName(), readAllBytes(in), forbidden, hits);
                 }
             }
         }
+        requireScanned(scanned, packagePrefix);
         return hits;
     }
 

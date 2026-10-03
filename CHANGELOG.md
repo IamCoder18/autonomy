@@ -31,6 +31,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not a guard, and this one had a two-slot alignment path (Long and Double
   claim two pool indexes) that no real class in the library happens to exercise.
 
+  While making that guard trustworthy, two more ways for it to report a clean
+  library without reading anything turned up, both of which affected the
+  pre-existing type scan as well:
+
+  - The scans matched slash-separated package prefixes against
+    `Path.relativize` output, which uses the platform separator. On Windows
+    every class was skipped and `NoAndroidApiLeakTest` reported no leaks — a
+    false all-clear, not a failure. Names are now normalised to `/`.
+  - A scan that matched no class returned an empty list, identical to a clean
+    result, so a renamed package or a moved build directory would quietly turn
+    a guard into a rubber stamp. All three scans now throw when they match
+    nothing, which is the check `PackageBoundaryTest` already made for its
+    class listing.
+
+  Both are test-only and change nothing at runtime.
+
 ### Added
 
 - **States nest to any depth.** `Submachine` holds a list of states and runs them
