@@ -2,11 +2,15 @@ package com.aaravlabs.autonomy.ftc;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -266,10 +270,77 @@ class SdkReferenceTest {
                         + " the owner comparison below silently matches nothing and the whole"
                         + " scan reports an empty set.");
 
-        // The aggregate is a union over the package, so a synthetic class carrying SDK
-        // references cannot hide behind a scan that only opened one file.
-        assertEquals(adapterSdkReferences().size(), union(classes).size(),
-                "the aggregate reference set should be the union over every class in " + PACKAGE);
+        // Compared against an independent walk of the compiled output, not against the scan's
+        // own input. Comparing the aggregate to a union of the very list it was built from
+        // cannot fail: narrow the listing and both sides shrink identically.
+        List<String> expected = classFilesOnDisk();
+        Collections.sort(expected);
+        Collections.sort(classes);
+        assertEquals(expected, classes,
+                "listClasses must find every compiled class under " + PACKAGE + ". A scan that"
+                        + " missed one would let a synthetic class carrying SDK references hide"
+                        + " behind a listing that only opened a known file.");
+    }
+
+    @Test
+    @DisplayName("listClasses enumerates a package rather than a known file")
+    void listClassesEnumeratesRatherThanGuessing() throws IOException {
+        // The adapter package happens to hold exactly one class today, which makes the check
+        // above indistinguishable from a hardcoded lookup. The core package holds six, so a
+        // listing that returned a single known file cannot pass here -- which is what gives
+        // the package scan its teeth for whatever lands in the adapter package next.
+        String core = "com/aaravlabs/autonomy/";
+        List<String> found = ConstantPool.listClasses(core);
+
+        assertTrue(found.size() >= 6,
+                "expected the whole core package, found " + found + ". If this drops to one, the"
+                        + " enumeration has become a hardcoded lookup and the package scan above"
+                        + " stops being able to detect a missed class.");
+
+        // Asserted directly, because the separator bug it guards cannot be reached on the
+        // platform CI runs: relativize() yields '/' here and '\\' on Windows, so dropping the
+        // normalisation changes nothing locally and only fails for a contributor on Windows.
+        // Checking the returned names contain no backslash is the part that holds everywhere.
+        for (String name : found) {
+            assertFalse(name.contains("\\"),
+                    "listClasses returned \"" + name + "\", which contains a Windows separator."
+                            + " Internal names must be slash-separated to match the constant"
+                            + " pool owners they are compared against.");
+        }
+
+        // Both sides sorted: Files.walk yields directory order, which is not the order
+        // ConstantPool.listClasses happens to produce, and comparing two unordered
+        // traversals as lists would fail on ordering rather than on content.
+        List<String> expected = classFilesOnDiskIn(core);
+        List<String> sorted = new ArrayList<>(found);
+        Collections.sort(expected);
+        Collections.sort(sorted);
+        assertEquals(expected, sorted);
+    }
+
+    /** Every {@code .class} internal name under a package, counted directly off disk. */
+    private static List<String> classFilesOnDiskIn(String internalPackagePrefix)
+            throws IOException {
+        Path classes = Path.of("build", "classes", "java", "main");
+        List<String> names = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(classes)) {
+            walk.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".class"))
+                    .forEach(p -> {
+                        String name = classes.relativize(p).toString()
+                                .replace('\\', '/')
+                                .replace(".class", "");
+                        if (name.startsWith(internalPackagePrefix)) {
+                            names.add(name);
+                        }
+                    });
+        }
+        Collections.sort(names);
+        return names;
+    }
+
+    private static List<String> classFilesOnDisk() throws IOException {
+        return classFilesOnDiskIn(PACKAGE);
     }
 
     // ---- reference helpers -----------------------------------------------------
@@ -312,6 +383,22 @@ class SdkReferenceTest {
             name = ConstantPool.superName(readRealSdk(name));
         }
         return hierarchy;
+    }
+
+    @Test
+    @DisplayName("fails by name when the real SDK is not wired up, not with a NullPointerException")
+    void namesTheMissingProperty() {
+        // Running these tests outside Gradle -- an IDE run configuration, a bare `java`
+        // invocation -- leaves autonomy.realFtcSdk unset. FtcStubFidelityTest guards this in
+        // @BeforeAll; without an equivalent here, Path.of(null) throws an NPE that says
+        // nothing about which system property is missing.
+        Path jar = Path.of(System.getProperty("autonomy.realFtcSdk"));
+        assertTrue(Files.isReadable(jar),
+                "autonomy.realFtcSdk should point at the extracted RobotCore classes.jar."
+                        + " build.gradle wires it in for the `test` task; if you are running"
+                        + " these tests from an IDE, add"
+                        + " -Dautonomy.realFtcSdk=<path to classes.jar> to the run"
+                        + " configuration.");
     }
 
     private static String declaringClassIn(Set<String> hierarchy, String member)

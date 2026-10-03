@@ -25,11 +25,15 @@ import java.util.function.BooleanSupplier;
  *
  * <p>{@code loop()} has no default; {@code init()} and {@code stop()} do.
  *
- * <p><strong>Call {@code setEndCondition} from {@code init()}, never from
- * {@code loop()}.</strong> The condition is read after every {@code loop()}, so a
- * state that sets it during its first iteration still sees the run-once default
- * on that read and finishes immediately. Nothing inside the state can notice that,
- * which is what {@link #isEndConditionDefaulted()} is for.
+ * <p><strong>Call {@code setEndCondition} from {@code init()}.</strong> It is read after
+ * every {@code loop()}, so setting it during the first {@code loop()} does work -- but
+ * setting it later cannot, because the run-once default has already ended the state by
+ * then. A state that installs its condition on, say, only its second loop runs exactly
+ * once and is skipped, which is the failure this class's fallback is designed to keep
+ * quiet. Nothing inside the state can notice, which is what
+ * {@link #isEndConditionDefaulted()} is for.
+ *
+ * <p>See {@link State} for the ordering the runner guarantees.
  */
 public abstract class AbstractState implements State {
 
@@ -51,11 +55,11 @@ public abstract class AbstractState implements State {
     /**
      * Sets the condition that ends this state. Call this from {@link #init()}.
      *
-     * <p>Not from {@link #loop()}: the first read of the condition happens immediately
-     * after the first {@code loop()}, so a condition installed there is seen one
-     * iteration too late and the state ends after a single loop. That failure is
-     * quiet, and on a real route it is indistinguishable from a state that was
-     * skipped.
+     * <p>Prefer {@link #init()}. Setting it during the first {@link #loop()} does take
+     * effect, since the condition is read at the end of that same iteration -- but a
+     * condition installed any later cannot: the run-once default has already ended the
+     * state by then, so the state runs exactly once and is skipped. That failure is quiet,
+     * and on a real route it is indistinguishable from a state that was forgotten.
      *
      * @throws NullPointerException if {@code endCondition} is {@code null}
      */

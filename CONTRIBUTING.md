@@ -47,13 +47,28 @@ not hypothetical: 0.1.2 shipped a stub declaring `void update()` where the SDK
 declares `boolean update()`, and every test passed.
 
 So the stubs are not reviewed by eye. `FtcStubFidelityTest` resolves the real
-`RobotCore` AAR and compares **every class and every member** of the stub
-against it by descriptor, fields included, with no hand-maintained list in the
-loop. If you touch a stub, that test is the arbiter — and if it fails, the fix is
-to read the descriptor out of the real AAR, never to adjust the test. Two
+`RobotCore` AAR and compares every class in the stub against it, member by
+member, by descriptor — methods and fields, with no hand-maintained list in the
+loop. If you touch a stub, that test is the arbiter, and if it fails the fix is
+to read the descriptor out of the real AAR, never to adjust the test. Three
 further bugs came out of it: `@Autonomous`'s stub declared `preselectTeleOp()`
-as `int` where the SDK declares `String`, and `HardwareMap.get(String)` stubbed
-as returning `Object` where the SDK returns `HardwareDevice`.
+as `int` where the SDK declares `String`, `HardwareMap.get(String)` stubbed as
+returning `Object` where the SDK returns `HardwareDevice`, and `@TeleOp`
+declaring three members it does not have.
+
+Know what it does *not* check, because it is one-directional and the omissions
+are deliberate:
+
+- **Constructors.** A stub compiled from source always gets a default
+  constructor; the real classes are built by the Robot Controller and several
+  have none. `new HardwareMap()` against the stub still fails on a robot.
+- **Members the stub is missing.** It proves the stub is not *more* permissive
+  than the SDK, which is the direction that throws `NoSuchMethodError`. A stub
+  that declares less than the SDK is merely less useful, and fails at compile
+  time with a message naming the missing member.
+
+Add a stub member only where something references it. Every extra signature is
+another chance to mistranscribe a descriptor.
 
 If you bump the Synapse dependency, re-read its changelog and check
 `StateMachineOpModeLinkageTest`, which asserts the adapter's contract against
@@ -98,11 +113,13 @@ GITHUB_USER=<your-github-username> GITHUB_TOKEN=$(gh auth token) \
 - **No mutable static state.** It is shared across every `StateMachine` in the
   process and survives `stop()`, so one run's leftovers leak into the next.
 - **`setEndCondition` goes in `init()`, never in `loop()`.** The condition is
-  read after every `loop()`, so one installed during the first iteration is seen
-  a cycle late and the state ends after a single loop. That is the
-  "state got skipped" bug the library exists to design out, so it is treated as
-  one: `StateMachineOpMode` reports any state that never set a condition as a
-  `State problem` telemetry line, for the rest of the run.
+  read after every `loop()`, so one installed inside `loop()` *is* honoured from
+  that same iteration on — it is not a cycle late. The trap is narrower and
+  worth stating precisely: a state that sets its condition on, say, only its
+  second loop has already been finished by the run-once default at the end of
+  its first, so it runs exactly once and is skipped. Put it in `init()` and the
+  question does not arise. `StateMachineOpMode` reports any state that never set
+  one as a `State problem` telemetry line, for the rest of the run.
 - **States take dependencies through constructors.** A state that looks up a
   device itself cannot be unit tested, which defeats the point.
 - **Tests for new behaviour.** Ordering, timing, and abort guarantees are the
@@ -119,7 +136,8 @@ Releases are tag-triggered. To cut one:
 3. Commit on `main` and push. Wait for the `Test` workflow to go green.
 4. Tag: `git tag vX.Y.Z`. The tag must match `version` exactly — the publish
    workflow fails the build otherwise, rather than publishing one version's bytes
-   under another version's name.
+   under another version's name. Never tag `v*` from a branch whose
+   `build.gradle` you have not bumped in the same commit.
 5. Push: `git push origin main --tags`.
 
 The tag push triggers the `Publish` workflow, which re-runs the tests and then

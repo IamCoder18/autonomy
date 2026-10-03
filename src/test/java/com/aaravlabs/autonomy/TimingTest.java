@@ -63,11 +63,19 @@ class TimingTest {
         zero.update();
         assertTrue(zero.isFinished(), "a zero wait should still cost exactly one iteration");
 
+        // The clock goes into the WaitState as well as the machine: a two-argument WaitState
+        // measures against System.nanoTime(), so passing the clock only to the machine would
+        // leave this assertion resting on real elapsed time -- machine speed and scheduling --
+        // in the very test class that exists to rule that out.
         StateMachine ordinary = new StateMachine(
-                java.util.Arrays.asList(new WaitState("Settle", 0.75)), clock);
+                java.util.Arrays.asList(new WaitState("Settle", 0.75, clock)), clock);
         ordinary.start();
         ordinary.update();
         assertFalse(ordinary.isFinished(), "0.75 s has not elapsed yet");
+
+        clock.advance(0.75);
+        ordinary.update();
+        assertTrue(ordinary.isFinished(), "and it ends once 0.75 s of the injected clock passes");
 
         assertEquals("Settle", new WaitState("Settle", 0.75).name());
         HoldState.forSeconds("Intake", 0.001, on -> { });

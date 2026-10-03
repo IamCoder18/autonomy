@@ -240,20 +240,42 @@ class StateMachineOpModeEndsItselfTest {
                 if (reachedStopRequest(e)) {
                     stopRequested = true;
                 } else {
-                    throw e;
+                    // Not the failure we were braced for. Rethrowing it here rather than
+                    // swallowing it keeps a genuine bug from reading as "the stop was
+                    // requested", and the wrapper's own message points at the real cause.
+                    throw new IllegalStateException(
+                            "onSafeLoop failed for a reason other than the stop request, so"
+                                    + " this test cannot tell whether it was reached. The"
+                                    + " original failure follows.", e);
                 }
             }
         }
 
+        /**
+         * Whether this failure is the expected one: the stop request reaching the SDK stub.
+         *
+         * <p>Two conditions, not one. The stub's {@code requestOpModeStop()} throws
+         * {@link UnsupportedOperationException}, so requiring that in the cause chain is what
+         * makes the match specific. A single stack-frame check on {@code endTheRoutine} would
+         * also flip on any unrelated failure that happened to pass through that method, and
+         * would break -- silently, by recording the wrong answer -- if the method were renamed
+         * or inlined. Matching the exception type keeps the coupling on the SDK boundary, which
+         * is the thing this test is actually asserting.
+         */
         private static boolean reachedStopRequest(Throwable failure) {
+            boolean sawStubThrow = false;
+            boolean passedThrough = false;
             for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                if (cause instanceof UnsupportedOperationException) {
+                    sawStubThrow = true;
+                }
                 for (StackTraceElement frame : cause.getStackTrace()) {
                     if (frame.getMethodName().equals("endTheRoutine")) {
-                        return true;
+                        passedThrough = true;
                     }
                 }
             }
-            return false;
+            return sawStubThrow && passedThrough;
         }
 
         private void invoke(String hook) {

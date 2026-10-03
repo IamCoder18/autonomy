@@ -34,6 +34,16 @@ public final class HoldState extends AbstractState {
 
     private long endNanos;
 
+    /**
+     * False until the first {@link #loop()}, which is when the deadline is armed and the
+     * mechanism is applied.
+     *
+     * <p>{@code init()} runs while the Driver Station still shows INIT, and the driver may sit
+     * there for an unbounded time before pressing START. Anything anchored in {@code init()} is
+     * therefore measured against a period in which the OpMode is not actually running.
+     */
+    private boolean running = false;
+
     private HoldState(String name, Consumer<Boolean> action, Double seconds,
             BooleanSupplier condition, LongSupplier nanoTime) {
         boolean bothSet = seconds != null && condition != null;
@@ -95,18 +105,35 @@ public final class HoldState extends AbstractState {
 
     @Override
     public void init() {
+        running = false;
         if (condition != null) {
             setEndCondition(condition);
         } else {
-            endNanos = Timing.deadline(nanoTime.getAsLong(), seconds);
-            setEndCondition(() -> nanoTime.getAsLong() >= endNanos);
+            // Dead until the first loop(), so the duration is measured from the moment the
+            // OpMode actually starts running rather than from INIT.
+            setEndCondition(() -> running && nanoTime.getAsLong() >= endNanos);
         }
-        action.accept(Boolean.TRUE);
     }
 
     @Override
     public void loop() {
-        // The mechanism was applied on entry and is released by stop(); nothing to do here.
+        // Applied on the first loop(), once only.
+        //
+        // Not in init(): that runs while the Driver Station shows INIT, before the driver has
+        // pressed START, so the intake would be spinning on the bench and before the match is
+        // live -- at best surprising, at worst the reason a robot grabs a wall. Synapse's
+        // SafeOpMode offers no post-start hook, and the first loop() is the first iteration the
+        // Robot Controller runs with the OpMode started.
+        //
+        // Once only, because loop() runs at several hundred iterations a second and the output
+        // cannot change while this state is active.
+        if (!running) {
+            running = true;
+            if (seconds != null) {
+                endNanos = Timing.deadline(nanoTime.getAsLong(), seconds);
+            }
+            action.accept(Boolean.TRUE);
+        }
     }
 
     @Override

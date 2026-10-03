@@ -46,6 +46,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before `update()` (the state is already gone afterwards) and kept for the rest
   of the run.
 
+- **`HoldState` powered its mechanism during INIT, and a short hold could be
+  entirely consumed before the robot moved.** Both stemmed from anchoring the
+  work in `init()`. `init()` runs while the Driver Station shows INIT, before the
+  driver has pressed START, so the intake was already spinning on the bench and
+  before the match was live -- at best surprising, at worst the reason a robot
+  grabs a wall. Worse, the deadline was armed at the same moment: a 0.75 s settle
+  delay, or a 0.2 s shoot, could be spent entirely waiting for the driver, so the
+  step did not happen at all.
+
+  `HoldState` now applies its action on the first `loop()` -- the first iteration
+  the Robot Controller runs with the OpMode started -- and still only once, which
+  keeps the per-iteration write amplification away. `WaitState` arms its deadline
+  there too. Both measure from when the OpMode actually runs, so time in INIT
+  costs nothing.
+
+  `HoldState.until(...)` was already immune: its condition is the team's own, read
+  after every loop, so it never depended on a clock. Its first loop() now applies
+  the mechanism, matching the timed form.
+
+- **SDK-reference tests would fail on Windows.** `ConstantPool.listClasses`
+  compared a slash-separated internal-name prefix against
+  `Path.relativize(...).toString()`, which yields `\` there, so the scan found
+  nothing and the suite failed. Separators are normalised now.
+
 - **`WaitState` and `HoldState` accepted `NaN` and infinite durations.**
   `seconds < 0` does not catch `NaN`, because every comparison against it is
   false; a `NaN` duration then converted to zero nanoseconds and the wait

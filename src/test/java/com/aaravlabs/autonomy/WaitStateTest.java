@@ -19,6 +19,9 @@ class WaitStateTest {
         StateMachine machine = new StateMachine(Arrays.asList(new WaitState("Settle", 0.5, clock)), clock);
 
         machine.start();
+        machine.update();                          // arms the deadline
+        assertFalse(machine.isFinished(), "a fresh 0.5 s wait should not be over yet");
+
         clock.advance(0.25);
         machine.update();
         assertFalse(machine.isFinished(), "should still be waiting before the deadline");
@@ -35,9 +38,36 @@ class WaitStateTest {
         StateMachine machine = new StateMachine(Arrays.asList(new WaitState("Settle", 0.5, clock)), clock);
 
         machine.start();
+        machine.update();
         clock.advance(10);
         machine.update();
 
+        assertTrue(machine.isFinished());
+    }
+
+    @Test
+    @DisplayName("time spent waiting for the driver to press START does not eat the wait")
+    void doesNotConsumeTheWaitDuringInit() {
+        // init() runs while the Driver Station shows INIT, and the driver may sit there for an
+        // unbounded time before pressing START. A settle delay anchored in init() is measured
+        // against a period in which the OpMode is not running, so a 0.75 s settle can be
+        // entirely consumed before the robot moves -- which defeats the point of a settle.
+        FakeClock clock = new FakeClock();
+        StateMachine machine = new StateMachine(Arrays.asList(new WaitState("Settle", 0.75, clock)), clock);
+
+        machine.start();
+        clock.advance(30);                         // driver takes half a minute to press START
+        assertFalse(machine.isFinished());
+
+        machine.update();
+        assertFalse(machine.isFinished(), "the 0.75 s settle should begin when the OpMode runs");
+
+        clock.advance(0.5);
+        machine.update();
+        assertFalse(machine.isFinished(), "0.5 s of the 0.75 s has elapsed");
+
+        clock.advance(0.3);
+        machine.update();
         assertTrue(machine.isFinished());
     }
 

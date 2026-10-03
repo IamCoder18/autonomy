@@ -135,6 +135,14 @@ Two cover most routes:
 point: it receives `true` while active and `false` on the way out, so releasing
 the mechanism is part of the state and cannot be forgotten.
 
+It is applied once, on the first `loop()` iteration, rather than on every one —
+the OpMode loop runs at several hundred iterations a second, and re-writing the
+same output that often is pure overhead. The clock starts there too, not at
+`init()`. `init()` runs while the Driver Station still shows INIT, and the driver
+can sit there for as long as they like before pressing START. Anchoring a hold
+in `init()` means the intake is already spinning before the match is live, and
+that a 0.2 s shoot can expire entirely while waiting for START.
+
 ```java
 HoldState.forSeconds("Run intake", 1.0, on -> intake.run(m -> m.setPower(on ? 1.0 : 0.0)));
 HoldState.until("Shoot", shooter::isShootComplete, on -> shooter.setRunning(on));
@@ -250,7 +258,7 @@ signal to push the hardware access behind an interface you can fake.
 
 ## Testing & development
 
-60 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
+65 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
 behaviour, misuse, argument validation, the Android API-level floor, the
 package boundary, the link to Synapse, and the exact SDK members the compiled
 adapter references.

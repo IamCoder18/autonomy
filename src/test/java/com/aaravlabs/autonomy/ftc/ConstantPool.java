@@ -157,7 +157,12 @@ final class ConstantPool {
             walk.filter(Files::isRegularFile)
                     .filter(p -> p.toString().endsWith(".class"))
                     .forEach(p -> {
-                        String name = classes.relativize(p).toString();
+                        // Normalise to '/' before matching: relativize() yields the platform
+                        // separator, so on Windows this is "com\aaravlabs\...", which never
+                        // matches a slash-separated internal-name prefix. Without this the scan
+                        // finds nothing and throws, failing the SDK-reference tests on a
+                        // platform nobody here runs CI on.
+                        String name = classes.relativize(p).toString().replace('\\', '/');
                         // Strip .class: these are internal names, which is what callers
                         // must compare against constant pool owners.
                         if (name.startsWith(internalPackagePrefix)) {

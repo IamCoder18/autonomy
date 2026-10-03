@@ -103,7 +103,7 @@ class FtcStubFidelityTest {
     }
 
     @Test
-    @DisplayName("@Autonomous's members match the SDK exactly")
+    @DisplayName("@Autonomous declares nothing the SDK does not")
     void autonomousAnnotationMatchesTheSdk() throws IOException {
         // Pinned separately from the sweep below because it is the worst drift the stub
         // ever carried: a wrong return *type* on an annotation member, plus three
@@ -113,18 +113,39 @@ class FtcStubFidelityTest {
         ConstantPool.Members real = realSdkMembers(
                 "com/qualcomm/robotcore/eventloop/opmode/Autonomous");
 
-        assertEqualsMembers("Autonomous",
+        // Subset direction only: the stub must not declare anything the SDK lacks. Both
+        // sides are asserted here because these two annotations are short enough to compare
+        // in full, and a member the *real* annotation has that the stub lacks is worth
+        // seeing named -- it is a member a team's own OpMode could want to compile against.
+        assertNoExtraMembers("Autonomous",
                 withoutConstructors(stub.methods), withoutConstructors(real.methods));
+
+        Set<String> missing = new TreeSet<>(withoutConstructors(real.methods));
+        missing.removeAll(withoutConstructors(stub.methods));
+        assertTrue(missing.isEmpty(),
+                "the real @Autonomous declares " + missing + " but the stub does not, so a"
+                        + " team using it against the stub cannot compile. Add the members."
+                        + " (Nothing in Autonomy itself uses this annotation, which is why the"
+                        + " stub was allowed to drift this far unnoticed.)");
     }
 
     @Test
-    @DisplayName("@TeleOp's members match the SDK exactly")
+    @DisplayName("@TeleOp declares nothing the SDK does not")
     void teleOpAnnotationMatchesTheSdk() throws IOException {
-        assertEqualsMembers("TeleOp",
-                withoutConstructors(
-                        stubMembers("com/qualcomm/robotcore/eventloop/opmode/TeleOp").methods),
-                withoutConstructors(
-                        realSdkMembers("com/qualcomm/robotcore/eventloop/opmode/TeleOp").methods));
+        ConstantPool.Members stub =
+                stubMembers("com/qualcomm/robotcore/eventloop/opmode/TeleOp");
+        ConstantPool.Members real =
+                realSdkMembers("com/qualcomm/robotcore/eventloop/opmode/TeleOp");
+
+        assertNoExtraMembers("TeleOp",
+                withoutConstructors(stub.methods), withoutConstructors(real.methods));
+
+        Set<String> missing = new TreeSet<>(withoutConstructors(real.methods));
+        missing.removeAll(withoutConstructors(stub.methods));
+        assertTrue(missing.isEmpty(),
+                "the real @TeleOp declares " + missing + " but the stub does not. @TeleOp is"
+                        + " what a team writes first when adopting Autonomy, so a member it is"
+                        + " missing here is a compile error in consumer code.");
     }
 
     @Test
@@ -180,7 +201,14 @@ class FtcStubFidelityTest {
 
     // ---- assertions -------------------------------------------------------------
 
-    private static void assertEqualsMembers(
+    /**
+     * Asserts the stub declares nothing the SDK lacks -- the direction that produces
+     * {@code NoSuchMethodError} on a Robot Controller.
+     *
+     * <p>Named for what it checks rather than "equal", because it is one-directional: a member
+     * the SDK has and the stub does not is a missing convenience, not a link failure.
+     */
+    private static void assertNoExtraMembers(
             String what, Set<String> stubbed, Set<String> real) {
         Set<String> wrong = new TreeSet<>(stubbed);
         wrong.removeAll(real);
