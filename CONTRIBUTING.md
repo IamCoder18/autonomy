@@ -17,8 +17,8 @@ all here to make FTC software better.
 This is a single-module Gradle project — the root project *is* the library:
 
 - `src/main/java/com/aaravlabs/autonomy/` — the state framework. Plain Java:
-  `State`, `AbstractState`, `StateMachine`, `WaitState`, `HoldState`. Imports
-  nothing outside `java.util`.
+  `State`, `AbstractState`, `StateMachine`, `WaitState`, `HoldState`, `Submachine`,
+  `Timer`. Imports nothing outside `java.util`.
 - `src/main/java/com/aaravlabs/autonomy/ftc/` — the one robot-facing class,
   `StateMachineOpMode`. The only place Synapse, the FTC SDK, or Android may be
   named.

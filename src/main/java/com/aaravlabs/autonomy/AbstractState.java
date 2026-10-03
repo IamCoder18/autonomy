@@ -2,6 +2,7 @@ package com.aaravlabs.autonomy;
 
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 /**
  * Base class for {@link State}s that stores the end condition.
@@ -46,6 +47,85 @@ public abstract class AbstractState implements State {
 
     private BooleanSupplier endCondition = RUN_ONCE;
     private boolean endConditionSet = false;
+
+    /** The clock this state's timer measures against. */
+    private final LongSupplier nanoTime;
+
+    private final LazyTimer timers = new LazyTimer();
+
+    /** Creates a state whose timer measures against {@link System#nanoTime()}. */
+    protected AbstractState() {
+        this(System::nanoTime);
+    }
+
+    /**
+     * Creates a state whose timer measures against an explicit clock, so a test outside this
+     * package can make timings deterministic.
+     *
+     * <p>Only needed by tests. The other constructor measures against {@link System#nanoTime()}.
+     *
+     * @throws NullPointerException if {@code nanoTime} is {@code null}
+     */
+    protected AbstractState(LongSupplier nanoTime) {
+        this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
+    }
+
+    /**
+     * This state's {@link Timer}, named after {@link #name()}.
+     *
+     * <p>Built on first call and reused after, so it is the same timer across every entry. It does
+     * not run until started, which is what lets a state be constructed while the Driver Station
+     * still shows INIT without losing that time.
+     *
+     * @see #startTimer()
+     * @see #startTimer(double)
+     */
+    protected final Timer timer() {
+        return timers.get(nanoTime, name());
+    }
+
+    /**
+     * Starts this state's timer over, with no timeout: it counts up and never expires.
+     *
+     * <p>Call from {@link #init()}, so the timer starts when the runner enters this state -- which
+     * for the first state of a route is the moment {@code start()} is called.
+     */
+    protected final void startTimer() {
+        timers.start(nanoTime, name());
+    }
+
+    /**
+     * Starts this state's timer over, expiring after {@code seconds}.
+     *
+     * <p>Call from {@link #init()}, then end the state on {@link Timer#hasElapsed()}. The duration
+     * is stated once, here:
+     *
+     * <pre>{@code
+     * @Override
+     * public void init() {
+     *     shooter.run();
+     *     startTimer(0.2);
+     *     setEndCondition(() -> timer().hasElapsed() || shooter.isShootComplete());
+     * }
+     * }</pre>
+     *
+     * @param seconds how long before {@link Timer#hasElapsed()} returns {@code true}
+     * @throws IllegalArgumentException if {@code seconds} is negative, NaN, or infinite
+     */
+    protected final void startTimer(double seconds) {
+        timers.start(nanoTime, name(), seconds);
+    }
+
+    /**
+     * Stops this state's timer, so it reports no further time.
+     *
+     * <p>Optional: a timer is unreachable once its state has been retired. Call it when a state
+     * exits early by some path other than {@link State#stop()}, so nothing keeps reading a stale
+     * elapsed time.
+     */
+    protected final void stopTimer() {
+        timers.stop();
+    }
 
     @Override
     public final BooleanSupplier endCondition() {
