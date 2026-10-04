@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-04
+
+**One source-breaking change, described under *Changed* below:** `StateMachineOpMode`'s
+Synapse lifecycle hooks are now `final`, and the route is entered on START rather than on
+INIT. Before upgrading, check whether you override `onSafeInit()`, `onSafeStart()`, or
+`onSafeStop()`, or do init-phase work in `onSafeInit()` — both need to move. Nothing else
+in the public API was removed or narrowed; every other change here is additive.
 
 ### Fixed
 
@@ -145,7 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   This is what makes sealing the lifecycle hooks possible, which see *Changed*.
 
-### Fixed
+- `TimingTest`, covering duration validation, the `NaN` and infinity cases, and
+  saturation of an overflowing deadline.
 
 - **A finished autonomous never ended its OpMode.** `StateMachineOpMode` ran the
   route, reported telemetry, and stopped — it never asked the Robot Controller to
@@ -284,11 +291,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`StateMachine`'s clock constructor and `WaitState`/`HoldState`'s are now
   consistently public**, so a team's tests outside the package can inject a clock
   for deterministic timings.
-
-### Added
-
-- `TimingTest`, covering duration validation, the `NaN` and infinity cases, and
-  saturation of an overflowing deadline.
 
 
 ## [0.1.3] - 2026-09-30
