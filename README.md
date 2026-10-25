@@ -277,7 +277,7 @@ declares `mavenCentral()`, so adding the dependency is all it takes:
 
 ```gradle
 dependencies {
-    implementation 'com.aaravlabs:autonomy:0.1.3'
+    implementation 'com.aaravlabs:autonomy:0.2.1'
 }
 ```
 
@@ -303,7 +303,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.aaravlabs:autonomy:0.1.3'
+    implementation 'com.aaravlabs:autonomy:0.2.1'
 }
 ```
 
