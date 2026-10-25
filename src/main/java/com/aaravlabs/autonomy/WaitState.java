@@ -57,7 +57,7 @@ public final class WaitState extends AbstractState {
 
     /**
      * Creates a wait of {@code seconds} with an explicit clock, so a test outside this package can
-     * make timings deterministic. The other second-based constructors measure against
+     * make timings deterministic. The constructors that do not take a clock measure against
      * {@link System#nanoTime()}.
      */
     public WaitState(String name, double seconds, LongSupplier nanoTime) {
@@ -87,7 +87,8 @@ public final class WaitState extends AbstractState {
 
     /**
      * Creates a wait with an explicit clock, so a test outside this package can make timings
-     * deterministic. The other constructors measure against {@link System#nanoTime()}.
+     * deterministic. The constructors that do not take a clock measure against
+     * {@link System#nanoTime()}.
      */
     public WaitState(String name, double duration, TimeUnit unit, LongSupplier nanoTime) {
         this(name, nanosFrom(duration, unit), nanoTime);
