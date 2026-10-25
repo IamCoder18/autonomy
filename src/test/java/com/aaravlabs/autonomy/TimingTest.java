@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,8 @@ class TimingTest {
         // NaN < 0 is false, so `if (seconds < 0) throw` never fires for it.
         assertFalse(Double.NaN < 0, "precondition: NaN is not caught by a negative check");
         assertThrowsIllegalArgument(() -> new WaitState("Settle", Double.NaN));
+        assertThrowsIllegalArgument(
+                () -> new WaitState("Settle", Double.NaN, TimeUnit.SECONDS));
         assertThrowsIllegalArgument(() -> HoldState.forSeconds("Intake", Double.NaN, on -> {}));
     }
 
@@ -38,14 +41,19 @@ class TimingTest {
         assertThrowsIllegalArgument(() -> new WaitState("Settle", Double.POSITIVE_INFINITY));
         assertThrowsIllegalArgument(() -> new WaitState("Settle", Double.NEGATIVE_INFINITY));
         assertThrowsIllegalArgument(
+                () -> new WaitState("Settle", Double.POSITIVE_INFINITY, TimeUnit.SECONDS));
+        assertThrowsIllegalArgument(
                 () -> HoldState.forSeconds("Intake", Double.POSITIVE_INFINITY, on -> {}));
+        assertThrowsIllegalArgument(
+                () -> HoldState.forSeconds("Intake", Double.NEGATIVE_INFINITY, on -> {}));
     }
 
     @Test
     @DisplayName("names the problem in the message")
     void explainsWhatIsWrong() {
         IllegalArgumentException thrown = org.junit.jupiter.api.Assertions.assertThrows(
-                IllegalArgumentException.class, () -> new WaitState("Settle", Double.NaN));
+                IllegalArgumentException.class,
+                () -> new WaitState("Settle", Double.NaN, TimeUnit.SECONDS));
 
         String message = thrown.getMessage();
         assertTrue(message.contains(">= 0"), message);
@@ -57,7 +65,7 @@ class TimingTest {
     void acceptsOrdinaryDurations() {
         // Before init() a state runs on the run-once default, so endCondition() is true and
         // says nothing about the duration. Drive it through a machine instead.
-        StateMachine zero = new StateMachine(new WaitState("Zero", 0));
+        StateMachine zero = new StateMachine(new WaitState("Zero", 0, TimeUnit.MILLISECONDS));
         zero.start();
         assertFalse(zero.isFinished(), "init() alone must not end the route");
         zero.update();
@@ -68,7 +76,9 @@ class TimingTest {
         // leave this assertion resting on real elapsed time -- machine speed and scheduling --
         // in the very test class that exists to rule that out.
         StateMachine ordinary = new StateMachine(
-                java.util.Arrays.asList(new WaitState("Settle", 0.75, clock)), clock);
+                java.util.Arrays.asList(
+                        new WaitState("Settle", 750, TimeUnit.MILLISECONDS, clock)),
+                clock);
         ordinary.start();
         ordinary.update();
         assertFalse(ordinary.isFinished(), "0.75 s has not elapsed yet");
@@ -77,7 +87,7 @@ class TimingTest {
         ordinary.update();
         assertTrue(ordinary.isFinished(), "and it ends once 0.75 s of the injected clock passes");
 
-        assertEquals("Settle", new WaitState("Settle", 0.75).name());
+        assertEquals("Settle", new WaitState("Settle", 750, TimeUnit.MILLISECONDS).name());
         HoldState.forSeconds("Intake", 0.001, on -> { });
     }
 
@@ -96,6 +106,9 @@ class TimingTest {
         assertTrue(deadline > now, "the deadline must be in the future, was " + deadline);
         assertEquals(Long.MAX_VALUE, deadline, "a duration that cannot fit saturates at MAX");
 
+        // Same guard for the nanosecond form WaitState uses after TimeUnit conversion.
+        assertEquals(Long.MAX_VALUE, Timing.deadline(now, Long.MAX_VALUE));
+
         // And end to end, through the state that uses it.
         List<Boolean> calls = new ArrayList<>();
         StateMachine machine = new StateMachine(
@@ -107,6 +120,14 @@ class TimingTest {
         }
         assertFalse(machine.isFinished(), "an absurd duration must not become an instant one");
         assertEquals(List.of(true), calls, "and it must not release itself either");
+
+        StateMachine waitMachine = new StateMachine(
+                java.util.Arrays.asList(
+                        new WaitState("Endless", Long.MAX_VALUE, TimeUnit.DAYS)),
+                clock);
+        waitMachine.start();
+        waitMachine.update();
+        assertFalse(waitMachine.isFinished(), "the nanosecond form must not wrap either");
     }
 
     @Test
@@ -114,7 +135,9 @@ class TimingTest {
     void leavesOrdinaryDeadlinesAlone() {
         long now = 1_000_000_000L;
         assertEquals(now + 750_000_000L, Timing.deadline(now, 0.75));
-        assertEquals(now, Timing.deadline(now, 0));
+        assertEquals(now + 750_000_000L, Timing.deadline(now, 750_000_000L));
+        assertEquals(now, Timing.deadline(now, 0.0));
+        assertEquals(now, Timing.deadline(now, 0L));
     }
 
     private static void assertThrowsIllegalArgument(Runnable construction) {

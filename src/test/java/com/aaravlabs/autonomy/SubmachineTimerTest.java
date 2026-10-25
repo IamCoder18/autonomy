@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 
@@ -64,8 +65,8 @@ class SubmachineTimerTest {
         void measuresTheWholePhase() {
             FakeClock clock = new FakeClock();
             TimingPhase phase = new TimingPhase("Climb", clock,
-                    new WaitState("Reach", 1.0, clock),
-                    new WaitState("Pull", 1.0, clock));
+                    new WaitState("Reach", 1, TimeUnit.SECONDS, clock),
+                    new WaitState("Pull", 1, TimeUnit.SECONDS, clock));
             StateMachine machine = machineWith(clock, phase);
 
             machine.start();
@@ -90,8 +91,10 @@ class SubmachineTimerTest {
         void countsNestedGroupsToo() {
             FakeClock clock = new FakeClock();
             TimingPhase outer = new TimingPhase("Match", clock,
-                    new TimingPhase("Red", clock, new WaitState("a", 0.5, clock)),
-                    new TimingPhase("Blue", clock, new WaitState("b", 0.5, clock)));
+                    new TimingPhase("Red", clock,
+                            new WaitState("a", 500, TimeUnit.MILLISECONDS, clock)),
+                    new TimingPhase("Blue", clock,
+                            new WaitState("b", 500, TimeUnit.MILLISECONDS, clock)));
             StateMachine machine = machineWith(clock, outer);
 
             // Driven a step at a time rather than in a loop, because the total depends on the
@@ -122,7 +125,7 @@ class SubmachineTimerTest {
         void leavesThePhaseWhenTheClockRunsOut() {
             FakeClock clock = new FakeClock();
             TimedSubmachine phase = new TimedSubmachine("Climb", clock,
-                    new WaitState("Reach", 30.0, clock),      // would otherwise run for 30 s
+                    new WaitState("Reach", 30, TimeUnit.SECONDS, clock),  // far beyond the budget
                     RecordingState.lasting("never", log, 1000));
             StateMachine machine = machineWith(clock, phase);
 
@@ -139,7 +142,7 @@ class SubmachineTimerTest {
         void stopsTheRunningChild() {
             FakeClock clock = new FakeClock();
             TimedSubmachine phase = new TimedSubmachine("Climb", clock,
-                    new WaitState("Reach", 0.1, clock),
+                    new WaitState("Reach", 100, TimeUnit.MILLISECONDS, clock),
                     RecordingState.lasting("holding", log, 1000));
             StateMachine machine = machineWith(clock, phase);
 
@@ -165,7 +168,7 @@ class SubmachineTimerTest {
             // A state that would run one loop and finish anyway, so the only thing that can end
             // this phase early is the group's own budget.
             TimedSubmachine phase = new TimedSubmachine("Climb", clock,
-                    new WaitState("Reach", 0.1, clock),
+                    new WaitState("Reach", 100, TimeUnit.MILLISECONDS, clock),
                     RecordingState.lasting("last", log, 5));
             StateMachine machine = machineWith(clock, phase);
 
@@ -214,7 +217,8 @@ class SubmachineTimerTest {
             boolean[] gate = new boolean[2];
             int[] entries = new int[1];
             Submachine shared = new Submachine("Shared",
-                    Arrays.asList(new WaitState("a", 0.0, clock), new WaitState("b", 0.0, clock)),
+                    Arrays.asList(new WaitState("a", 0, TimeUnit.MILLISECONDS, clock),
+                            new WaitState("b", 0, TimeUnit.MILLISECONDS, clock)),
                     NEVER, clock) {
                 @Override
                 public void init() {

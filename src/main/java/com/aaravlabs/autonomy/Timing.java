@@ -34,7 +34,7 @@ final class Timing {
     static void requireFiniteNonNegative(double seconds) {
         if (Double.isNaN(seconds) || Double.isInfinite(seconds) || seconds < 0) {
             throw new IllegalArgumentException(
-                    "seconds must be a finite number >= 0, was " + seconds);
+                    "duration must be a finite number >= 0, was " + seconds);
         }
     }
 
@@ -55,10 +55,20 @@ final class Timing {
      * @return the deadline in the same units as {@code now}
      */
     static long deadline(long now, double seconds) {
-        long delta = (long) (seconds * NANOS_PER_SECOND);
-        if (delta > 0 && now > Long.MAX_VALUE - delta) {
+        return deadline(now, (long) (seconds * NANOS_PER_SECOND));
+    }
+
+    /**
+     * As {@link #deadline(long, double)}, with the duration already in nanoseconds.
+     *
+     * @param now        the current reading of the clock
+     * @param deltaNanos the duration in nanoseconds; must be >= 0
+     * @return the deadline in the same units as {@code now}
+     */
+    static long deadline(long now, long deltaNanos) {
+        if (deltaNanos > 0 && now > Long.MAX_VALUE - deltaNanos) {
             return Long.MAX_VALUE;
         }
-        return now + delta;
+        return now + deltaNanos;
     }
 }
