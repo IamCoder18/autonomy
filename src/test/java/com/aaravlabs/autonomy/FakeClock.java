@@ -16,7 +16,12 @@ final class FakeClock implements LongSupplier {
 
     /** Moves the clock forward and returns itself, so calls can be chained. */
     FakeClock advance(double seconds) {
-        nanos += (long) (seconds * NANOS_PER_SECOND);
+        return advanceNanos((long) (seconds * NANOS_PER_SECOND));
+    }
+
+    /** Moves the clock forward by an exact number of nanoseconds, for sub-second waits. */
+    FakeClock advanceNanos(long deltaNanos) {
+        nanos += deltaNanos;
         return this;
     }
 }

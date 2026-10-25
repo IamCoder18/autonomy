@@ -25,10 +25,10 @@ public class ExampleAuto extends StateMachineOpMode {
         SafeDevice<DcMotorEx> intake = safeMap.device(DcMotorEx.class, "intake");
 
         return Arrays.asList(
-                new WaitState("Settle", 0.75),
+                new WaitState("Settle", 750, TimeUnit.MILLISECONDS),
                 HoldState.forSeconds("Intake on", 1.0,
                         on -> intake.run(m -> m.setPower(on ? 1.0 : 0.0))),
-                new WaitState("Pause", 0.5),
+                new WaitState("Pause", 500, TimeUnit.MILLISECONDS),
                 HoldState.forSeconds("Intake again", 1.0,
                         on -> intake.run(m -> m.setPower(on ? 1.0 : 0.0))));
     }
@@ -136,7 +136,7 @@ build them:
 
 ```java
 return Arrays.asList(
-        new WaitState("Settle", 0.75),
+        new WaitState("Settle", 750, TimeUnit.MILLISECONDS),
         new Submachine("RightScissor", Arrays.asList(
                 new Submachine("Drive", forward(), strafe()),
                 new Submachine("Turn",  turnAway())),
@@ -167,10 +167,18 @@ Two cover most routes:
 
 | State | Ends when | Use for |
 | --- | --- | --- |
-| `WaitState` | a fixed number of seconds has passed | settle delays, readable gaps in a route |
+| `WaitState` | the requested duration has passed | settle delays, readable gaps in a route |
 | `HoldState.forSeconds(name, secs, action)` | the time is up | run a mechanism for a known duration |
 | `HoldState.until(name, condition, action)` | the condition is true | run until a sensor, colour, or limit says stop |
 | `Submachine(name, states...)` | its last child ends | naming a phase, and nesting a route |
+
+`WaitState` takes its duration with a `java.util.concurrent.TimeUnit`, so a
+route can spell out the unit: `0.75, TimeUnit.SECONDS`, `750,
+TimeUnit.MILLISECONDS`, or `1, TimeUnit.MINUTES`. The supported units run from
+`NANOSECONDS` through `DAYS`. Waits shorter than one OpMode iteration are
+checked only on iteration boundaries, so nanosecond and microsecond waits are
+approximate at low values. Existing constructors without a unit still mean
+seconds, so `new WaitState("Settle", 0.75)` keeps working.
 
 `HoldState`'s action is a `Consumer<Boolean>`, not a `Runnable`, and that is the
 point: it receives `true` while active and `false` on the way out, so releasing
@@ -325,7 +333,7 @@ own, and only the `ftc` subpackage does.
 | `State` | `com.aaravlabs.autonomy` | One step of a routine: `init`/`loop`/`stop` + an end condition. |
 | `AbstractState` | `com.aaravlabs.autonomy` | Base class that stores the end condition. |
 | `StateMachine` | `com.aaravlabs.autonomy` | Runs a fixed list of states, one OpMode iteration at a time. |
-| `WaitState` | `com.aaravlabs.autonomy` | Waits N seconds. |
+| `WaitState` | `com.aaravlabs.autonomy` | Waits for a duration in a given `TimeUnit`. |
 | `HoldState` | `com.aaravlabs.autonomy` | Holds a mechanism for a time or until a condition, then releases it. |
 | `Timer` | `com.aaravlabs.autonomy` | How long a state has been running, and whether it has been running too long. |
 | `Submachine` | `com.aaravlabs.autonomy` | A state made of other states: a named phase, nestable to any depth. |
@@ -375,7 +383,7 @@ signal to push the hardware access behind an interface you can fake.
 
 ## Testing & development
 
-86 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
+153 JUnit 5 tests covering the runner's ordering guarantees, timing, abort
 behaviour, nesting, misuse, argument validation, the Android API-level floor, the
 package boundary, the link to Synapse, and the exact SDK members the compiled
 adapter references.

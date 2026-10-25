@@ -21,7 +21,7 @@ public class Repro extends StateMachineOpMode {
     @Override
     protected List<State> buildStates() {
         return Arrays.asList(
-                new WaitState("Settle", 0.75),
+                new WaitState("Settle", 750, TimeUnit.MILLISECONDS),
                 HoldState.forSeconds("Intake on", 1.0, on -> { ... }));
     }
 }

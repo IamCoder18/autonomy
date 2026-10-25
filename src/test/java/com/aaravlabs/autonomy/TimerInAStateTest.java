@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -141,7 +142,7 @@ class TimerInAStateTest {
             FakeClock clock = new FakeClock();
             List<String> log = new ArrayList<>();
             StateMachine machine = new StateMachine(Arrays.asList(
-                    new WaitState("Settle", 1.0, clock),
+                    new WaitState("Settle", 1, TimeUnit.SECONDS, clock),
                     new TimingState("Shoot", clock, log)), clock);
 
             machine.start();

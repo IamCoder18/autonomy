@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`WaitState` accepts a `TimeUnit`.** Its constructors can take
+  `(double duration, TimeUnit unit)` in addition to the existing seconds-based
+  forms, so a route can spell out what its numbers mean:
+
+  ```java
+  new WaitState("Settle", 0.75, TimeUnit.SECONDS);
+  new WaitState("Pause", 750, TimeUnit.MILLISECONDS);
+  ```
+
+  The supported units are `java.util.concurrent.TimeUnit`'s `NANOSECONDS`,
+  `MICROSECONDS`, `MILLISECONDS`, `SECONDS`, `MINUTES`, `HOURS`, and `DAYS`.
+  Waits are still checked once per OpMode iteration, so nanosecond and
+  microsecond waits are approximate at low values: a wait shorter than an
+  iteration cannot end before the next check.
+
+  The original constructors remain and continue to mean seconds, so
+  `new WaitState("Settle", 0.75)` needs no change.
+
 ## [0.2.0] - 2026-10-04
 
 **One source-breaking change, described under *Changed* below:** `StateMachineOpMode`'s
